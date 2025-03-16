@@ -876,26 +876,32 @@ function handleCancellationConfirmation(replyToken, userId, eventId) {
       return;
     }
     
-    // イベントタイトルとディスクリプションからユーザーIDを抽出して権限チェック
+    // イベントタイトルとディスクリプションを取得
     const title = event.getTitle();
     const description = event.getDescription();
-    let userIdInEvent = null;
     
-    // タイトルから検索
-    const titleMatch = title.match(/\((.*?)\)/);
-    if (titleMatch) {
-      userIdInEvent = titleMatch[1];
+    console.log(`イベントタイトル: ${title}`);
+    console.log(`イベント説明文: ${description}`);
+    
+    // ユーザーIDが含まれているか確認（複数のパターンをチェック）
+    let hasPermission = false;
+    
+    // パターン1: 古い形式 "(userId)"
+    if (title.includes(`(${userId})`)) {
+      hasPermission = true;
+    }
+    // パターン2: 新しい形式 "ユーザーID: (userId)"
+    else if (title.includes(`ユーザーID: (${userId})`)) {
+      hasPermission = true;
+    }
+    // パターン3: 説明文の中に "ユーザーID: userId"
+    else if (description && description.includes(`ユーザーID: ${userId}`)) {
+      hasPermission = true;
     }
     
-    // ディスクリプションから検索（タイトルで見つからない場合）
-    if (!userIdInEvent && description) {
-      const descMatch = description.match(/ユーザーID: (.*?)(\n|$)/);
-      if (descMatch) {
-        userIdInEvent = descMatch[1];
-      }
-    }
+    console.log(`ユーザー ${userId} のキャンセル権限: ${hasPermission}`);
     
-    if (!userIdInEvent || userIdInEvent !== userId) {
+    if (!hasPermission) {
       sendLineMessage(replyToken, [{
         type: "text",
         text: "この予約をキャンセルする権限がありません。"
@@ -1072,11 +1078,27 @@ function handleCancellationConfirmed(replyToken, userId) {
       return;
     }
     
-    // イベントタイトルからユーザーIDを抽出して権限チェック
+    // イベントタイトルとディスクリプションを取得
     const title = event.getTitle();
-    const userIdInEvent = title.match(/\((.*?)\)/);
+    const description = event.getDescription();
     
-    if (!userIdInEvent || userIdInEvent[1] !== userId) {
+    // ユーザーIDが含まれているか確認（複数のパターンをチェック）
+    let hasPermission = false;
+    
+    // パターン1: 古い形式 "(userId)"
+    if (title.includes(`(${userId})`)) {
+      hasPermission = true;
+    }
+    // パターン2: 新しい形式 "ユーザーID: (userId)"
+    else if (title.includes(`ユーザーID: (${userId})`)) {
+      hasPermission = true;
+    }
+    // パターン3: 説明文の中に "ユーザーID: userId"
+    else if (description && description.includes(`ユーザーID: ${userId}`)) {
+      hasPermission = true;
+    }
+    
+    if (!hasPermission) {
       sendLineMessage(replyToken, [{
         type: "text",
         text: "この予約をキャンセルする権限がありません。"
@@ -1205,6 +1227,22 @@ function sendCancellationCompleteMessage(replyToken, dateStr, timeStr) {
           }
         ]
       },
+    "footer": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "button",
+            "style": "primary",
+            "action": {
+              "type": "message",
+              "label": "新規予約はこちら",
+              "text": "予約"
+            },
+            "color": "#28A745"
+          }
+        ]
+      }
     }
   };
   
@@ -1239,18 +1277,35 @@ function getUserFutureReservations(userId) {
     }
     
     // ユーザーIDが含まれるイベントのみを抽出
-    // 修正: タイトルとディスクリプションの両方からユーザーIDを検索
     const userEvents = events.filter(event => {
       try {
         const title = event.getTitle();
         const description = event.getDescription();
         
-        // 修正: 現在のタイトル形式とディスクリプションの両方を確認
-        return (
-          title.includes(`(${userId})`) || 
-          title.includes(`ユーザーID: (${userId})`) ||
-          (description && description.includes(`ユーザーID: ${userId}`))
-        );
+        // デバッグログ
+        console.log(`イベント検索中 - タイトル: ${title}`);
+        if (description) {
+          console.log(`イベント検索中 - 説明文: ${description}`);
+        }
+        
+        // 複数のパターンでチェック
+        // パターン1: 古い形式 "(userId)"
+        if (title.includes(`(${userId})`)) {
+          console.log(`パターン1で一致: ${title}`);
+          return true;
+        }
+        // パターン2: 新しい形式 "ユーザーID: (userId)"
+        if (title.includes(`ユーザーID: (${userId})`)) {
+          console.log(`パターン2で一致: ${title}`);
+          return true;
+        }
+        // パターン3: 説明文の中に "ユーザーID: userId"
+        if (description && description.includes(`ユーザーID: ${userId}`)) {
+          console.log(`パターン3で一致: ${description}`);
+          return true;
+        }
+        
+        return false;
       } catch (e) {
         console.error("イベントタイトル取得エラー:", e);
         return false;
