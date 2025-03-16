@@ -475,7 +475,7 @@ function finalizeReservation(replyToken, userId) {
   const userName = getUserDisplayName(userId);
   
   // イベントタイトル（ユーザー名と予約ID用にLINE IDを含める）
-  const eventTitle = `予約者名: ${userName} `;
+  const eventTitle = `予約者名: ${userName} \nユーザーID: (${userId})`;
   
   // カレンダーに予約を追加
   try {
@@ -677,6 +677,25 @@ function sendReservationListFlexMessage(replyToken, userId, reservations) {
     // 最大5件の予約を表示
     const displayReservations = reservations.slice(0, 5);
     
+    // 予約がない場合のメッセージ
+    if (displayReservations.length === 0) {
+      sendLineMessage(replyToken, [{
+        type: "text",
+        text: "現在、予約はありません。「予約」と送信して新しい予約を作成できます。",
+        quickReply: {
+          items: [{
+            type: "action",
+            action: {
+              type: "message",
+              label: "予約する",
+              text: "予約"
+            }
+          }]
+        }
+      }]);
+      return;
+    }
+    
     // 各予約のカード項目を作成
     const reservationItems = displayReservations.map((reservation, index) => {
       const startTime = reservation.getStartTime();
@@ -765,28 +784,51 @@ function sendReservationListFlexMessage(replyToken, userId, reservations) {
       "contents": {
         "type": "bubble",
         "size": "mega",
-      "header": {
-        "type": "box",
-        "layout": "vertical",
-        "contents": [
-          {
-            "type": "text",
-            "text": "現在の予約一覧",
-            "weight": "bold",
-            "size": "lg",
-            "align": "center",
-            "color": "#ffffff"
-          }
-        ],
-        "backgroundColor": "#28A745",
-        "paddingTop": "md",
-        "paddingBottom": "md"
-      },
+        "header": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "text",
+              "text": "現在の予約一覧",
+              "weight": "bold",
+              "size": "lg",
+              "align": "center",
+              "color": "#ffffff"
+            }
+          ],
+          "backgroundColor": "#28A745",
+          "paddingTop": "md",
+          "paddingBottom": "md"
+        },
         "body": {
           "type": "box",
           "layout": "vertical",
-          "contents": reservationItems
+          "contents": reservationItems.length > 0 ? reservationItems : [{
+            "type": "text",
+            "text": "現在、予約はありません。",
+            "size": "md",
+            "color": "#555555",
+            "align": "center",
+            "margin": "xl"
+          }]
         },
+        "footer": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "button",
+              "style": "primary",
+              "action": {
+                "type": "message",
+                "label": "新規予約",
+                "text": "予約"
+              },
+              "color": "#28A745"
+            }
+          ]
+        }
       }
     };
     
@@ -798,7 +840,17 @@ function sendReservationListFlexMessage(replyToken, userId, reservations) {
     // エラー時はシンプルなテキストメッセージで対応
     const fallbackMessage = {
       type: "text",
-      text: "予約一覧の表示中にエラーが発生しました。もう一度お試しください。"
+      text: "予約一覧の表示中にエラーが発生しました。もう一度お試しください。",
+      quickReply: {
+        items: [{
+          type: "action",
+          action: {
+            type: "message",
+            label: "予約する",
+            text: "予約"
+          }
+        }]
+      }
     };
     
     sendLineMessage(replyToken, [fallbackMessage]);
@@ -824,11 +876,26 @@ function handleCancellationConfirmation(replyToken, userId, eventId) {
       return;
     }
     
-    // イベントタイトルからユーザーIDを抽出して権限チェック
+    // イベントタイトルとディスクリプションからユーザーIDを抽出して権限チェック
     const title = event.getTitle();
-    const userIdInEvent = title.match(/\((.*?)\)/);
+    const description = event.getDescription();
+    let userIdInEvent = null;
     
-    if (!userIdInEvent || userIdInEvent[1] !== userId) {
+    // タイトルから検索
+    const titleMatch = title.match(/\((.*?)\)/);
+    if (titleMatch) {
+      userIdInEvent = titleMatch[1];
+    }
+    
+    // ディスクリプションから検索（タイトルで見つからない場合）
+    if (!userIdInEvent && description) {
+      const descMatch = description.match(/ユーザーID: (.*?)(\n|$)/);
+      if (descMatch) {
+        userIdInEvent = descMatch[1];
+      }
+    }
+    
+    if (!userIdInEvent || userIdInEvent !== userId) {
       sendLineMessage(replyToken, [{
         type: "text",
         text: "この予約をキャンセルする権限がありません。"
@@ -1172,10 +1239,18 @@ function getUserFutureReservations(userId) {
     }
     
     // ユーザーIDが含まれるイベントのみを抽出
+    // 修正: タイトルとディスクリプションの両方からユーザーIDを検索
     const userEvents = events.filter(event => {
       try {
         const title = event.getTitle();
-        return title.includes(`(${userId})`);
+        const description = event.getDescription();
+        
+        // 修正: 現在のタイトル形式とディスクリプションの両方を確認
+        return (
+          title.includes(`(${userId})`) || 
+          title.includes(`ユーザーID: (${userId})`) ||
+          (description && description.includes(`ユーザーID: ${userId}`))
+        );
       } catch (e) {
         console.error("イベントタイトル取得エラー:", e);
         return false;
