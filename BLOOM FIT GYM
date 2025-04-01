@@ -1,0 +1,3028 @@
+/**
+ * - LINEとGoogleカレンダーを連携した予約管理システム
+ * - LINE経由で予約を受け付け、Googleカレンダーに予約情報を登録
+ * - すべての予約情報をスプレッドシートにも記録
+ * - 予約前日にLINEでリマインド通知
+ * - 予約確認・キャンセル機能
+ * - 会員情報登録機能（氏名、メールアドレス、電話番号）
+ * - モダンでシンプルなUI
+ * - 処理の高速化と安定性向上 */
+
+// ======= 設定 =======
+// 予約情報登録先のGoogleカレンダーID
+const CALENDAR_ID = '75cc831d70c8ad3f7713a8a696d19580d52c7af436a46a727d8f25fda95863a6@group.calendar.google.com'; // 【編集箇所】
+
+// 予約情報保存用のスプレッドシートID
+const SPREADSHEET_ID = '15SncWjgaX50SpP3joOg2vEbgL5HyfW_gZ3qCbTMrjE0'; // 【編集箇所】
+
+// LINEチャンネルアクセストークン
+const LINE_ACCESS_TOKEN = 'zzNSlKaehqyIM0gUVHabcBE/60f+Iv4zz9208GrcsHbbAg6SqoFcmNMJeOFTZ/5TUqYyYCCLzsyTP0g1VErkHbT1eAynCT6GHnuaprkPLeKcGJouo3B3+jNS9lFGiRd2FCoSxaASgOQH0fLPT4N6+wdB04t89/1O/w1cDnyilFU='; // 【編集箇所】
+
+// 予約タイムスロット設定
+const BUSINESS_HOURS = {
+  start: 10, // 予約受付開始時間（10時）
+  end: 22    // 予約受付終了時間（22時）
+} // 【編集箇所】
+
+// 1人あたりの最大予約数
+const MAX_RESERVATIONS_PER_USER = 3; // 【編集箇所】
+
+// 各時間枠の最大予約数
+const MAX_SLOTS_PER_TIME = 1; // 【編集箇所】
+
+// 予約可能日数（今日から何日先まで予約可能か）
+const DAYS_AHEAD = 30; // 【編集箇所】
+
+// 予約可能開始日（今日から何日後から予約可能か）
+const MIN_DAYS_AHEAD = 2; // 【編集箇所】
+
+// 定休日の設定（0:日曜, 1:月曜, 2:火曜, 3:水曜, 4:木曜, 5:金曜, 6:土曜）
+const CLOSED_DAYS = [1]; // 【編集箇所】月曜日が定休日。複数の場合はカンマ（,）区切りにする。
+
+// タイムゾーン設定
+const TIME_ZONE = 'Asia/Tokyo';
+
+/**
+ * 予約シートを取得または作成
+ */
+function getOrCreateReservationSheet() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let sheet = ss.getSheetByName('予約リスト');
+  
+  if (!sheet) {
+    // シートが存在しない場合は新規作成
+    sheet = ss.insertSheet('予約リスト');
+    
+    // ヘッダー行を設定
+    sheet.appendRow([
+      'イベントID',
+      'ユーザーID',
+      'ユーザー名',
+      '予約日',
+      '予約時間',
+      '予約日(ISO)',
+      '開始時刻',
+      'ステータス',
+      '登録日時',
+      '備考'
+    ]);
+    
+    // ヘッダー行の書式設定
+    sheet.getRange(1, 1, 1, 10).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    
+    // 列幅の調整
+    sheet.setColumnWidth(1, 300); // イベントID
+    sheet.setColumnWidth(2, 150); // ユーザーID
+    sheet.setColumnWidth(3, 150); // ユーザー名
+    sheet.setColumnWidth(4, 150); // 予約日
+    sheet.setColumnWidth(5, 100); // 予約時間
+    sheet.setColumnWidth(6, 100); // 予約日(ISO)
+    sheet.setColumnWidth(7, 80);  // 開始時刻
+    sheet.setColumnWidth(8, 100); // ステータス
+    sheet.setColumnWidth(9, 150); // 登録日時
+    sheet.setColumnWidth(10, 250); // 備考
+  }
+  
+  return sheet;
+}
+
+/**
+ * ユーザーの一時データを保存するシートを取得または作成
+ */
+function getOrCreateUserTempSheet() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let sheet = ss.getSheetByName('ユーザー一時データ');
+  
+  if (!sheet) {
+    // シートが存在しない場合は新規作成
+    sheet = ss.insertSheet('ユーザー一時データ');
+    
+    // ヘッダー行を設定
+    sheet.appendRow([
+      'ユーザーID',
+      'キー',
+      '値',
+      '更新日時'
+    ]);
+    
+    // ヘッダー行の書式設定
+    sheet.getRange(1, 1, 1, 4).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  
+  return sheet;
+}
+
+/**
+ * 会員情報保存用のシートを取得または作成
+ */
+function getOrCreateMemberSheet() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let sheet = ss.getSheetByName('会員リスト');
+  
+  if (!sheet) {
+    // シートが存在しない場合は新規作成
+    sheet = ss.insertSheet('会員リスト');
+    
+    // ヘッダー行を設定
+    sheet.appendRow([
+      'ユーザーID',
+      '氏名',
+      'メールアドレス',
+      '電話番号',
+      '登録日時',
+      '更新日時',
+      'ステータス'
+    ]);
+    
+    // ヘッダー行の書式設定
+    sheet.getRange(1, 1, 1, 7).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    
+    // 列幅の調整
+    sheet.setColumnWidth(1, 150); // ユーザーID
+    sheet.setColumnWidth(2, 150); // 氏名
+    sheet.setColumnWidth(3, 200); // メールアドレス
+    sheet.setColumnWidth(4, 150); // 電話番号
+    sheet.setColumnWidth(5, 150); // 登録日時
+    sheet.setColumnWidth(6, 150); // 更新日時
+    sheet.setColumnWidth(7, 100); // ステータス
+  }
+  
+  return sheet;
+}
+
+/**
+ * ユーザーの一時データを保存
+ */
+function saveUserTemp(userId, key, value) {
+  const sheet = getOrCreateUserTempSheet();
+  const data = sheet.getDataRange().getValues();
+  
+  // 既存のデータがあれば上書き
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === userId && data[i][1] === key) {
+      sheet.getRange(i + 1, 3).setValue(value);
+      sheet.getRange(i + 1, 4).setValue(new Date());
+      return;
+    }
+  }
+  
+  // 新規データの追加
+  sheet.appendRow([userId, key, value, new Date()]);
+}
+
+/**
+ * ユーザーの一時データを取得
+ */
+function getUserTemp(userId, key) {
+  const sheet = getOrCreateUserTempSheet();
+  const data = sheet.getDataRange().getValues();
+  
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === userId && data[i][1] === key) {
+      return data[i][2];
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * ユーザーの一時データを削除
+ */
+function removeUserTemp(userId) {
+  const sheet = getOrCreateUserTempSheet();
+  const data = sheet.getDataRange().getValues();
+  
+  // 削除対象の行を特定
+  const rowsToDelete = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === userId) {
+      rowsToDelete.push(i + 1);
+    }
+  }
+  
+  // 行を削除（後ろから順に削除）
+  for (let i = rowsToDelete.length - 1; i >= 0; i--) {
+    sheet.deleteRow(rowsToDelete[i]);
+  }
+}
+
+/**
+ * 会員情報を保存
+ */
+function saveMemberInfo(userId, memberInfo) {
+  const sheet = getOrCreateMemberSheet();
+  const data = sheet.getDataRange().getValues();
+  const now = new Date();
+  
+  // 既存会員データがあれば更新
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === userId) {
+      sheet.getRange(i + 1, 2).setValue(memberInfo.name);
+      sheet.getRange(i + 1, 3).setValue(memberInfo.email);
+      sheet.getRange(i + 1, 4).setValue(memberInfo.phone);
+      sheet.getRange(i + 1, 6).setValue(now); // 更新日時
+      return true;
+    }
+  }
+  
+  // 新規会員の追加
+  sheet.appendRow([
+    userId,
+    memberInfo.name,
+    memberInfo.email,
+    memberInfo.phone,
+    now, // 登録日時
+    now, // 更新日時
+    '登録済' // ステータス
+  ]);
+  
+  return true;
+}
+
+/**
+ * 会員情報を取得
+ */
+function getMemberInfo(userId) {
+  const sheet = getOrCreateMemberSheet();
+  const data = sheet.getDataRange().getValues();
+  
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === userId) {
+      return {
+        name: data[i][1],
+        email: data[i][2],
+        phone: data[i][3],
+        registrationDate: data[i][4],
+        updateDate: data[i][5],
+        status: data[i][6]
+      };
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * 日付を「YYYY年MM月DD日（曜日）」形式に変換
+ */
+function formatDateWithDay(date) {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const dayOfWeek = ["日", "月", "火", "水", "木", "金", "土"][date.getDay()];
+  
+  return `${year}年${month}月${day}日（${dayOfWeek}）`;
+}
+
+/**
+ * 「YYYY年MM月DD日（曜日）」形式の日付文字列からDateオブジェクトを生成
+ */
+function parseDateString(dateStr) {
+  console.log("日付文字列をパース:", dateStr);
+  
+  // "2023年10月25日（水）" → 日付オブジェクト
+  const match = dateStr.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if (!match) return null;
+  
+  const year = parseInt(match[1]);
+  const month = parseInt(match[2]) - 1; // 月は0-11
+  const day = parseInt(match[3]);
+  
+  return new Date(year, month, day);
+}
+
+/**
+ * 日付のweek numberを取得（1年の中の何週目か）
+ */
+function getWeekNumber(date) {
+  const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+  const pastDaysOfYear = (date - firstDayOfYear) / 86400000;
+  return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+}
+
+/**
+ * 会員登録フォームを開始
+ */
+function startMemberRegistration(replyToken, userId) {
+  console.log(`会員登録フォーム開始: ユーザーID ${userId}`);
+  
+  // 既存会員情報チェック
+  const existingMember = getMemberInfo(userId);
+  
+  if (existingMember) {
+    // 既に登録済みの場合は情報を表示
+    sendMemberInfoView(replyToken, userId, existingMember);
+    return;
+  }
+  
+  // 古い一時データをクリア
+  removeUserTemp(userId);
+  
+  // 初期ステップを設定
+  saveUserTemp(userId, "member_step", "name_input");
+  
+  // 会員登録フォームの最初のステップ（氏名入力）を表示
+  sendNameInputForm(replyToken);
+}
+
+/**
+ * 氏名入力フォームを送信
+ */
+function sendNameInputForm(replyToken) {
+  const nameInputMessage = {
+    "type": "flex",
+    "altText": "会員登録: お名前入力",
+    "contents": {
+      "type": "bubble",
+      "size": "kilo",
+      "header": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": "会員情報登録 (1/3)",
+            "weight": "bold",
+            "size": "lg",
+            "align": "center",
+            "color": "#ffffff"
+          }
+        ],
+        "backgroundColor": "#4285F4",
+        "paddingTop": "md",
+        "paddingBottom": "md"
+      },
+      "body": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": "お名前を入力してください",
+            "size": "md",
+            "weight": "bold",
+            "margin": "md"
+          },
+          {
+            "type": "text",
+            "text": "例: 山田 太郎",
+            "size": "sm",
+            "color": "#888888",
+            "margin": "sm"
+          }
+        ],
+        "paddingBottom": "md"
+      }
+    }
+  };
+  
+  sendLineMessage(replyToken, [nameInputMessage]);
+}
+
+/**
+ * メールアドレス入力フォームを送信
+ */
+function sendEmailInputForm(replyToken) {
+  const emailInputMessage = {
+    "type": "flex",
+    "altText": "会員登録: メールアドレス入力",
+    "contents": {
+      "type": "bubble",
+      "size": "kilo",
+      "header": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": "会員情報登録 (2/3)",
+            "weight": "bold",
+            "size": "lg",
+            "align": "center",
+            "color": "#ffffff"
+          }
+        ],
+        "backgroundColor": "#4285F4",
+        "paddingTop": "md",
+        "paddingBottom": "md"
+      },
+      "body": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": "メールアドレスを入力してください",
+            "size": "md",
+            "weight": "bold",
+            "margin": "md"
+          },
+          {
+            "type": "text",
+            "text": "例: example@gmail.com",
+            "size": "sm",
+            "color": "#888888",
+            "margin": "sm"
+          }
+        ],
+        "paddingBottom": "md"
+      }
+    }
+  };
+  
+  sendLineMessage(replyToken, [emailInputMessage]);
+}
+
+/**
+ * 電話番号入力フォームを送信
+ */
+function sendPhoneInputForm(replyToken) {
+  const phoneInputMessage = {
+    "type": "flex",
+    "altText": "会員登録: 電話番号入力",
+    "contents": {
+      "type": "bubble",
+      "size": "kilo",
+      "header": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": "会員情報登録 (3/3)",
+            "weight": "bold",
+            "size": "lg",
+            "align": "center",
+            "color": "#ffffff"
+          }
+        ],
+        "backgroundColor": "#4285F4",
+        "paddingTop": "md",
+        "paddingBottom": "md"
+      },
+      "body": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": "電話番号を入力してください",
+            "size": "md",
+            "weight": "bold",
+            "margin": "md"
+          },
+          {
+            "type": "text",
+            "text": "※必ずハイフンありでご入力ください※",
+            "size": "sm",
+            "color": "#FF0000",
+            "weight": "bold",
+            "margin": "md"
+          },
+          {
+            "type": "text",
+            "text": "例: 090-1234-5678",
+            "size": "sm",
+            "color": "#888888",
+            "margin": "sm"
+          }
+        ],
+        "paddingBottom": "md"
+      }
+    }
+  };
+  
+  sendLineMessage(replyToken, [phoneInputMessage]);
+}
+
+/**
+ * 会員情報入力確認フォームを送信
+ */
+function sendMemberConfirmationForm(replyToken, userId) {
+  console.log(`会員情報確認画面を表示: ユーザーID ${userId}`);
+  
+  try {
+    // 一時保存データから会員情報を取得
+    const name = getUserTemp(userId, "member_name");
+    const email = getUserTemp(userId, "member_email");
+    const phone = getUserTemp(userId, "member_phone");
+    
+    console.log(`取得した会員情報: 名前=${name}, メール=${email}, 電話=${phone}`);
+    
+    if (!name || !email || !phone) {
+      console.log("会員情報が不完全です");
+      sendLineMessage(replyToken, [{
+        type: "text",
+        text: "会員情報が不完全です。もう一度「会員登録」から始めてください。"
+      }]);
+      return;
+    }
+    
+    // 会員情報確認フォーム
+    const confirmationMessage = {
+      "type": "flex",
+      "altText": "会員登録: 確認",
+      "contents": {
+        "type": "bubble",
+        "size": "kilo",
+        "header": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "text",
+              "text": "会員情報確認",
+              "weight": "bold",
+              "size": "lg",
+              "align": "center",
+              "color": "#ffffff"
+            }
+          ],
+          "backgroundColor": "#4285F4",
+          "paddingTop": "md",
+          "paddingBottom": "md"
+        },
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "text",
+              "text": "以下の内容で登録します",
+              "size": "sm",
+              "color": "#888888",
+              "align": "center",
+              "margin": "md"
+            },
+            {
+              "type": "box",
+              "layout": "vertical",
+              "margin": "lg",
+              "spacing": "sm",
+              "contents": [
+                {
+                  "type": "box",
+                  "layout": "horizontal",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "氏名",
+                      "size": "sm",
+                      "color": "#555555",
+                      "flex": 1
+                    },
+                    {
+                      "type": "text",
+                      "text": name,
+                      "size": "sm",
+                      "color": "#111111",
+                      "align": "end",
+                      "wrap": true,
+                      "flex": 2
+                    }
+                  ]
+                },
+                {
+                  "type": "box",
+                  "layout": "horizontal",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "メール",
+                      "size": "sm",
+                      "color": "#555555",
+                      "flex": 1
+                    },
+                    {
+                      "type": "text",
+                      "text": email,
+                      "size": "sm",
+                      "color": "#111111",
+                      "align": "end",
+                      "wrap": true,
+                      "flex": 2
+                    }
+                  ],
+                  "margin": "sm"
+                },
+                {
+                  "type": "box",
+                  "layout": "horizontal",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "電話番号",
+                      "size": "sm",
+                      "color": "#555555",
+                      "flex": 1
+                    },
+                    {
+                      "type": "text",
+                      "text": phone,
+                      "size": "sm",
+                      "color": "#111111",
+                      "align": "end",
+                      "wrap": true,
+                      "flex": 2
+                    }
+                  ],
+                  "margin": "sm"
+                }
+              ]
+            }
+          ]
+        },
+        "footer": {
+          "type": "box",
+          "layout": "vertical",
+          "spacing": "sm",
+          "contents": [
+            {
+              "type": "button",
+              "style": "primary",
+              "action": {
+                "type": "message",
+                "label": "会員登録を確定する",
+                "text": "会員登録を確定する"
+              },
+              "color": "#28A745"
+            },
+            {
+              "type": "button",
+              "style": "secondary",
+              "action": {
+                "type": "message",
+                "label": "やり直す",
+                "text": "会員登録"
+              }
+            }
+          ]
+        }
+      }
+    };
+    
+    sendLineMessage(replyToken, [confirmationMessage]);
+    
+  } catch (error) {
+    console.error("会員情報確認画面表示エラー:", error);
+    sendLineMessage(replyToken, [{
+      type: "text",
+      text: "会員情報の確認中にエラーが発生しました。もう一度お試しください。"
+    }]);
+  }
+}
+
+/**
+ * 会員登録完了処理
+ */
+function finalizeMemberRegistration(replyToken, userId) {
+  console.log(`会員登録確定: ユーザーID ${userId}`);
+  
+  try {
+    // 一時保存データから会員情報を取得
+    const name = getUserTemp(userId, "member_name");
+    const email = getUserTemp(userId, "member_email");
+    const phone = getUserTemp(userId, "member_phone");
+    
+    if (!name || !email || !phone) {
+      sendLineMessage(replyToken, [{
+        type: "text",
+        text: "会員情報が不完全です。もう一度「会員登録」から始めてください。"
+      }]);
+      return;
+    }
+    
+    // 会員情報を保存
+    const memberInfo = {
+      name: name,
+      email: email,
+      phone: phone
+    };
+    
+    const result = saveMemberInfo(userId, memberInfo);
+    
+    if (result) {
+      // 一時データを削除
+      removeUserTemp(userId);
+      
+      // 登録完了メッセージ
+      sendRegistrationCompletionMessage(replyToken, name);
+    } else {
+      sendLineMessage(replyToken, [{
+        type: "text",
+        text: "会員情報の保存中にエラーが発生しました。もう一度お試しください。"
+      }]);
+    }
+    
+  } catch (error) {
+    console.error("会員登録確定エラー:", error);
+    sendLineMessage(replyToken, [{
+      type: "text",
+      text: "会員情報の登録中にエラーが発生しました。もう一度お試しください。"
+    }]);
+  }
+}
+
+/**
+ * 会員登録完了メッセージを送信
+ */
+function sendRegistrationCompletionMessage(replyToken, name) {
+  const completionMessage = {
+    "type": "flex",
+    "altText": "会員登録完了",
+    "contents": {
+      "type": "bubble",
+      "size": "kilo",
+      "header": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": "会員登録完了",
+            "weight": "bold",
+            "size": "lg",
+            "align": "center",
+            "color": "#ffffff"
+          }
+        ],
+        "backgroundColor": "#28A745",
+        "paddingTop": "md",
+        "paddingBottom": "md"
+      },
+      "body": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": `${name}様`,
+            "weight": "bold",
+            "size": "md",
+            "align": "center"
+          },
+          {
+            "type": "text",
+            "text": "会員登録が完了しました！",
+            "align": "center",
+            "margin": "md"
+          },
+          {
+            "type": "text",
+            "text": "ご登録ありがとうございます。当店の予約機能を使って、ぜひご予約ください。",
+            "size": "sm",
+            "color": "#555555",
+            "wrap": true,
+            "margin": "lg"
+          }
+        ]
+      },
+      "footer": {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "button",
+            "style": "primary",
+            "action": {
+              "type": "message",
+              "label": "予約する",
+              "text": "予約"
+            },
+            "color": "#28A745"
+          }
+        ]
+      }
+    }
+  };
+  
+  sendLineMessage(replyToken, [completionMessage]);
+}
+
+/**
+ * 会員情報表示
+ */
+function sendMemberInfoView(replyToken, userId, memberInfo) {
+  const memberInfoMessage = {
+    "type": "flex",
+    "altText": "会員情報",
+    "contents": {
+      "type": "bubble",
+      "size": "kilo",
+      "header": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": "会員情報",
+            "weight": "bold",
+            "size": "lg",
+            "align": "center",
+            "color": "#ffffff"
+          }
+        ],
+        "backgroundColor": "#4285F4",
+        "paddingTop": "md",
+        "paddingBottom": "md"
+      },
+      "body": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": "現在の登録情報",
+            "size": "sm",
+            "color": "#888888",
+            "align": "center",
+            "margin": "md"
+          },
+          {
+            "type": "box",
+            "layout": "vertical",
+            "margin": "lg",
+            "spacing": "sm",
+            "contents": [
+              {
+                "type": "box",
+                "layout": "horizontal",
+                "contents": [
+                  {
+                    "type": "text",
+                    "text": "氏名",
+                    "size": "sm",
+                    "color": "#555555",
+                    "flex": 1
+                  },
+                  {
+                    "type": "text",
+                    "text": memberInfo.name,
+                    "size": "sm",
+                    "color": "#111111",
+                    "align": "end",
+                    "wrap": true,
+                    "flex": 2
+                  }
+                ]
+              },
+              {
+                "type": "box",
+                "layout": "horizontal",
+                "contents": [
+                  {
+                    "type": "text",
+                    "text": "メール",
+                    "size": "sm",
+                    "color": "#555555",
+                    "flex": 1
+                  },
+                  {
+                    "type": "text",
+                    "text": memberInfo.email,
+                    "size": "sm",
+                    "color": "#111111",
+                    "align": "end",
+                    "wrap": true,
+                    "flex": 2
+                  }
+                ],
+                "margin": "sm"
+              },
+              {
+                "type": "box",
+                "layout": "horizontal",
+                "contents": [
+                  {
+                    "type": "text",
+                    "text": "電話番号",
+                    "size": "sm",
+                    "color": "#555555",
+                    "flex": 1
+                  },
+                  {
+                    "type": "text",
+                    "text": memberInfo.phone,
+                    "size": "sm",
+                    "color": "#111111",
+                    "align": "end",
+                    "wrap": true,
+                    "flex": 2
+                  }
+                ],
+                "margin": "sm"
+              }
+            ]
+          }
+        ]
+      },
+      "footer": {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "button",
+            "style": "primary",
+            "action": {
+              "type": "message",
+              "label": "予約する",
+              "text": "予約"
+            },
+            "color": "#28A745"
+          }
+        ]
+      }
+    }
+  };
+  
+  sendLineMessage(replyToken, [memberInfoMessage]);
+}
+
+/**
+ * 定期実行トリガーを設定
+ */
+function setupTriggers() {
+  // 既存のトリガーを削除
+  const triggers = ScriptApp.getProjectTriggers();
+  for (const trigger of triggers) {
+    if (trigger.getHandlerFunction() === 'sendDailyReminders') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  }
+  
+// 毎日午後13時に実行するトリガーを設定
+ScriptApp.newTrigger('sendDailyReminders')
+  .timeBased()
+  .atHour(13)
+  .everyDays(1)
+  .inTimezone(TIME_ZONE)
+  .create();
+  
+  console.log("リマインダー用のトリガーを設定しました");
+}
+
+/**
+ * 予約リマインダーを送信（毎日実行）
+ */
+function sendDailyReminders() {
+  console.log("日次予約リマインダー送信開始");
+  
+  // 明日の日付を計算
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
+  
+  // 明日の終日
+  const tomorrowEnd = new Date(tomorrow);
+  tomorrowEnd.setHours(23, 59, 59, 999);
+  
+  // 明日の予約を取得
+  const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+  const events = calendar.getEvents(tomorrow, tomorrowEnd);
+  
+  // ユーザーごとの予約をグループ化
+  const userReservations = {};
+  
+  events.forEach(event => {
+    const title = event.getTitle();
+    const match = title.match(/\((.*?)\)/);
+    if (!match) return;
+    
+    const userId = match[1];
+    if (!userReservations[userId]) {
+      userReservations[userId] = [];
+    }
+    
+    userReservations[userId].push(event);
+  });
+  
+  // 各ユーザーにリマインダーを送信
+  for (const userId in userReservations) {
+    const userEvents = userReservations[userId];
+    
+    // ユーザーの予約を日時順にソート
+    userEvents.sort((a, b) => a.getStartTime() - b.getStartTime());
+    
+    // 予約情報をFlexMessageとして送信
+    sendReminderFlexMessage(userId, userEvents);
+  }
+  
+  console.log("日次予約リマインダー送信完了");
+}
+
+/**
+ * 指定日の予約可能な時間枠を取得
+ */
+function getAvailableTimeSlots(date) {
+  console.log(`予約可能時間を取得: ${date}`);
+  
+  // 指定日のカレンダーイベントを取得
+  const events = getCalendarEvents(date);
+  
+  // 時間ごとの予約数をカウント
+  const bookedSlots = {};
+  events.forEach(event => {
+    const hour = event.getStartTime().getHours();
+    bookedSlots[hour] = (bookedSlots[hour] || 0) + 1;
+  });
+  
+  // 予約可能な時間枠をリストアップ
+  const availableTimeSlots = [];
+  for (let hour = BUSINESS_HOURS.start; hour < BUSINESS_HOURS.end; hour++) {
+    // 予約数がMAX_SLOTS_PER_TIME未満の時間のみ表示
+    if ((bookedSlots[hour] || 0) < MAX_SLOTS_PER_TIME) {
+      availableTimeSlots.push({
+        hour: hour,
+        display: `${hour}:00～${hour + 1}:00`
+      });
+    }
+  }
+  
+  return availableTimeSlots;
+}
+
+/**
+ * 指定日のカレンダーイベントを取得
+ */
+function getCalendarEvents(date) {
+  // 指定日の0時
+  const startDate = new Date(date);
+  startDate.setHours(0, 0, 0, 0);
+  
+  // 指定日の23時59分
+  const endDate = new Date(date);
+  endDate.setHours(23, 59, 59, 999);
+  
+  const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+  return calendar.getEvents(startDate, endDate);
+}
+
+/**
+ * 予約可能な日付のリストを取得
+ */
+function getAvailableDates() {
+  console.log("定休日:", CLOSED_DAYS); // デバッグ用ログ
+  
+  const today = new Date();
+  const dates = [];
+  
+  for (let i = MIN_DAYS_AHEAD; i <= DAYS_AHEAD; i++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + i);
+    
+    // 明示的に空配列の場合は常に追加
+    if (CLOSED_DAYS.length === 0 || !CLOSED_DAYS.includes(date.getDay())) {
+      const formattedDate = formatDateWithDay(date);
+      dates.push(formattedDate);
+    }
+  }
+  
+  console.log("利用可能な日付:", dates); // デバッグ用ログ
+  
+  return dates;
+}
+
+/**
+ * 時間選択後の処理
+ */
+function handleHourSelection(replyToken, userId, selectedHour) {
+  console.log(`時間選択処理: ${selectedHour}時`);
+  
+  // ユーザーの一時データから選択した日付を取得
+  const selectedDate = getUserTemp(userId, "selectedDate");
+  if (!selectedDate) {
+    sendLineMessage(replyToken, [{
+      type: "text",
+      text: "予約情報が見つかりません。もう一度「予約」から始めてください。"
+    }]);
+    return;
+  }
+  
+  // 日付文字列をDateオブジェクトに変換
+  const date = parseDateString(selectedDate);
+  if (!date) {
+    sendLineMessage(replyToken, [{
+      type: "text",
+      text: "日付の形式が正しくありません。もう一度「予約」から始めてください。"
+    }]);
+    return;
+  }
+  
+  // 予約時間設定
+  date.setHours(selectedHour, 0, 0, 0);
+  const endTime = new Date(date);
+  endTime.setHours(selectedHour + 1, 0, 0, 0);
+  
+  // 予約枠が空いているか確認
+  const events = getCalendarEvents(date);
+  let bookedCount = 0;
+  
+  events.forEach(event => {
+    if (event.getStartTime().getHours() === selectedHour) {
+      bookedCount++;
+    }
+  });
+  
+  if (bookedCount >= MAX_SLOTS_PER_TIME) {
+    sendLineMessage(replyToken, [{
+      type: "text",
+      text: "申し訳ありませんが、この時間はすでに予約が埋まっています。別の時間を選択してください。"
+    }]);
+    return;
+  }
+  
+  // 予約情報の一時保存（直接予約確定のため）
+  saveUserTemp(userId, "confirmDate", date.toISOString());
+  saveUserTemp(userId, "confirmHour", selectedHour);
+  
+  // 予約を直接確定する
+  finalizeReservation(replyToken, userId);
+}
+
+/**
+ * 予約を最終確定する
+ */
+function finalizeReservation(replyToken, userId) {
+  // 一時保存データから予約情報を取得
+  const dateStr = getUserTemp(userId, "confirmDate");
+  const selectedHour = getUserTemp(userId, "confirmHour");
+  
+  if (!dateStr || !selectedHour) {
+    sendLineMessage(replyToken, [{
+      type: "text",
+      text: "予約情報が見つかりません。もう一度「予約」から始めてください。"
+    }]);
+    return;
+  }
+  
+  // 日付と時間の復元
+  const date = new Date(dateStr);
+  const hour = parseInt(selectedHour);
+  
+  // 終了時間の設定
+  const endTime = new Date(date);
+  endTime.setHours(hour + 1, 0, 0, 0);
+  
+  // ユーザープロフィール取得
+  const userName = getUserDisplayName(userId);
+  
+  // イベントタイトル（ユーザー名と予約ID用にLINE IDを含める）
+  const eventTitle = `予約者名: ${userName} \nユーザーID: (${userId})`;
+  
+  // カレンダーに予約を追加
+  try {
+    const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+    const event = calendar.createEvent(
+      eventTitle,
+      date,
+      endTime,
+      {
+        description: `LINE予約システムからの予約\nユーザーID: ${userId}\nユーザー名: ${userName}\n予約日時: ${formatDateWithDay(date)} ${hour}:00～${hour+1}:00`
+      }
+    );
+    
+    // イベントIDを取得（キャンセル時に使用）
+    const eventId = event.getId();
+    
+    // スプレッドシートにも予約情報を記録
+    recordReservationToSheet({
+      eventId: eventId,
+      userId: userId,
+      userName: userName,
+      date: formatDateWithDay(date),
+      time: `${hour}:00～${hour+1}:00`,
+      isoDate: Utilities.formatDate(date, TIME_ZONE, 'yyyy-MM-dd'),
+      startHour: hour,
+      status: "予約済",
+      timestamp: new Date()
+    });
+    
+    // 一時データを削除
+    removeUserTemp(userId);
+    
+    // 予約完了メッセージ
+    sendCompletionMessage(replyToken, formatDateWithDay(date), `${hour}:00～${hour+1}:00`);
+    
+  } catch (error) {
+    console.error("カレンダー登録エラー:", error);
+    sendLineMessage(replyToken, [{
+      type: "text",
+      text: "予約登録中にエラーが発生しました。もう一度お試しください。"
+    }]);
+  }
+}
+
+/**
+ * 予約完了メッセージを送信
+ */
+function sendCompletionMessage(replyToken, dateStr, timeStr) {
+  const completionMessage = {
+    "type": "flex",
+    "altText": "予約が完了しました",
+    "contents": {
+      "type": "bubble",
+      "size": "kilo",
+      "header": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": "予約確定",
+            "weight": "bold",
+            "size": "lg",
+            "align": "center",
+            "color": "#ffffff"
+          }
+        ],
+        "backgroundColor": "#28A745",
+        "paddingTop": "md",
+        "paddingBottom": "md"
+      },
+      "body": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": "以下の内容で予約を承りました",
+            "size": "sm",
+            "color": "#888888",
+            "align": "center",
+            "margin": "md"
+          },
+          {
+            "type": "box",
+            "layout": "vertical",
+            "margin": "lg",
+            "spacing": "sm",
+            "contents": [
+              {
+                "type": "box",
+                "layout": "horizontal",
+                "contents": [
+                  {
+                    "type": "text",
+                    "text": "日付",
+                    "size": "sm",
+                    "color": "#555555",
+                    "flex": 1
+                  },
+                  {
+                    "type": "text",
+                    "text": dateStr,
+                    "size": "sm",
+                    "color": "#111111",
+                    "align": "end",
+                    "wrap": true,
+                    "flex": 2
+                  }
+                ]
+              },
+              {
+                "type": "box",
+                "layout": "horizontal",
+                "contents": [
+                  {
+                    "type": "text",
+                    "text": "時間",
+                    "size": "sm",
+                    "color": "#555555",
+                    "flex": 1
+                  },
+                  {
+                    "type": "text",
+                    "text": timeStr,
+                    "size": "sm",
+                    "color": "#111111",
+                    "align": "end",
+                    "flex": 2
+                  }
+                ],
+                "margin": "sm"
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "text": "※予約の前日にリマインドメッセージを送信します",
+            "margin": "xxl",
+            "size": "xs",
+            "color": "#888888",
+            "align": "center",
+            "wrap": true
+          }
+        ]
+      }
+    }
+  };
+  
+  sendLineMessage(replyToken, [completionMessage]);
+}
+
+/**
+ * リマインダー用のFlexMessageを送信
+ */
+function sendReminderFlexMessage(userId, reservations) {
+  try {
+    // ユーザー名を取得
+    const userName = getUserDisplayName(userId);
+    
+    // 予約アイテムを作成（各予約の表示）
+    const reservationItems = reservations.map(event => {
+      const startTime = event.getStartTime();
+      const endTime = event.getEndTime();
+      
+      const dateStr = formatDateWithDay(startTime);
+      const timeStr = `${startTime.getHours()}:00～${endTime.getHours()}:00`;
+      
+      return {
+        "type": "box",
+        "layout": "vertical",
+        "margin": "lg",
+        "contents": [
+          {
+            "type": "text",
+            "text": dateStr,
+            "weight": "bold",
+            "size": "sm"
+          },
+          {
+            "type": "text",
+            "text": timeStr,
+            "size": "sm",
+            "margin": "sm"
+          },
+          {
+            "type": "separator",
+            "margin": "md"
+          }
+        ]
+      };
+    });
+    
+    // リマインダーメッセージを作成
+    const reminderMessage = {
+      "type": "flex",
+      "altText": "明日の予約リマインダー",
+      "contents": {
+        "type": "bubble",
+        "size": "kilo",
+        "header": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "text",
+              "text": "明日の予約リマインダー",
+              "weight": "bold",
+              "size": "lg",
+              "align": "center",
+              "color": "#ffffff"
+            }
+          ],
+          "backgroundColor": "#4285F4",
+          "paddingTop": "md",
+          "paddingBottom": "md"
+        },
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "text",
+              "text": `${userName}様 \n明日の予約をお知らせします`,
+              "size": "md",
+              "wrap": true,
+              "margin": "md"
+            },
+            ...reservationItems,
+            {
+              "type": "text",
+              "text": "ご来店をお待ちしております。",
+              "size": "sm",
+              "color": "#555555",
+              "margin": "xxl",
+              "wrap": true
+            }
+          ]
+        },
+        "footer": {
+          "type": "box",
+          "layout": "vertical",
+          "spacing": "sm",
+          "contents": [
+            {
+              "type": "button",
+              "style": "#28A745",
+              "action": {
+                "type": "message",
+                "label": "予約確認",
+                "text": "予約確認"
+              }
+            }
+          ]
+        }
+      }
+    };
+    
+    // プッシュメッセージ送信
+    sendPushMessage(userId, [reminderMessage]);
+    
+  } catch (error) {
+    console.error("リマインダーFlexMessage作成エラー:", error);
+    
+    // エラー時はテキストメッセージでリマインド
+    const reservationTexts = reservations.map(event => {
+      const startTime = event.getStartTime();
+      const endTime = event.getEndTime();
+      
+      const dateStr = formatDateWithDay(startTime);
+      const timeStr = `${startTime.getHours()}:00～${endTime.getHours()}:00`;
+      
+      return `${dateStr} ${timeStr}`;
+    }).join("\n");
+    
+    const userName = getUserDisplayName(userId);
+    const textMessage = {
+      type: "text",
+      text: `${userName}様、明日の予約をお知らせします：\n\n${reservationTexts}\n\nご来店をお待ちしております。変更やキャンセルが必要な場合は「予約確認」から操作してください。`
+    };
+    
+    sendPushMessage(userId, [textMessage]);
+  }
+}
+
+/**
+ * 予約開始処理
+ */
+function handleReservationStart(replyToken, userId) {
+  // 過去の予約フローをリセット
+  removeUserTemp(userId);
+  
+  // 予約上限チェック
+  const userReservations = getUserFutureReservations(userId);
+  if (userReservations.length >= MAX_RESERVATIONS_PER_USER) {
+    sendLineMessage(replyToken, [{
+      type: "text",
+      text: `予約可能枠（${MAX_RESERVATIONS_PER_USER}枠）に達しています。新たに予約するには、既存の予約をキャンセルしてください。`
+    }]);
+    return;
+  }
+  
+  // ユーザー名を取得
+  let userName = getUserDisplayName(userId);
+  
+  // 予約フロー開始メッセージ
+  const welcomeMessage = [{
+    type: "text",
+    text: `${userName}様、ご予約を承ります。\n希望日を選択してください。`
+  }];
+  
+  // 日付選択画面を表示
+  sendDateSelection(replyToken, welcomeMessage);
+}
+
+/**
+ * 日付選択後の処理
+ */
+function handleDateSelection(replyToken, userId, selectedDate) {
+  console.log(`日付選択処理: ${selectedDate}`);
+  
+  // 日付文字列をDateオブジェクトに変換
+  const date = parseDateString(selectedDate);
+  if (!date) {
+    sendLineMessage(replyToken, [{
+      type: "text",
+      text: "日付の形式が正しくありません。もう一度お試しください。"
+    }]);
+    return;
+  }
+  
+  // ユーザーの一時データに選択した日付を保存
+  saveUserTemp(userId, "selectedDate", selectedDate);
+  
+  // 選択した日付の予約可能な時間枠を取得して表示
+  sendTimeSelection(replyToken, userId, date);
+}
+
+/**
+ * 予約確認処理
+ */
+function handleReservationConfirmation(replyToken, userId) {
+  console.log(`予約確認処理開始: ユーザーID ${userId}`);
+  
+  try {
+    // ユーザーの予約を取得
+    const reservations = getUserFutureReservations(userId);
+    console.log(`取得した予約数: ${reservations.length}`);
+    
+    if (reservations.length === 0) {
+      sendLineMessage(replyToken, [{
+        type: "text",
+        text: "現在、予約はありません。「予約」と送信して新しい予約を作成できます。",
+        quickReply: {
+          items: [{
+            type: "action",
+            action: {
+              type: "message",
+              label: "予約する",
+              text: "予約"
+            }
+          }]
+        }
+      }]);
+      return;
+    }
+    
+    // Flex Messageで予約一覧を表示
+    sendReservationListFlexMessage(replyToken, userId, reservations);
+    
+  } catch (error) {
+    console.error("予約確認処理エラー:", error, error.stack);
+    sendLineMessage(replyToken, [{
+      type: "text",
+      text: "予約情報の取得中にエラーが発生しました。もう一度お試しください。"
+    }]);
+  }
+}
+
+/**
+ * ユーザーの今後の予約一覧を取得
+ */
+function getUserFutureReservations(userId) {
+  console.log(`ユーザー予約取得: ${userId}`);
+  
+  try {
+    // カレンダーから今後の予約を取得
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // カレンダーから予約を取得（今日から30日後まで）
+    const endDate = new Date(today);
+    endDate.setDate(today.getDate() + DAYS_AHEAD);
+    
+    const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+    
+    // カレンダーからの取得
+    let events = [];
+    try {
+      events = calendar.getEvents(today, endDate);
+      console.log(`カレンダーから ${events.length} 件のイベントを取得`);
+    } catch (calError) {
+      console.error("カレンダー取得エラー:", calError);
+      events = []; // 空の配列で初期化
+    }
+    
+    // ユーザーIDが含まれるイベントのみを抽出
+    const userEvents = events.filter(event => {
+      try {
+        const title = event.getTitle();
+        const description = event.getDescription();
+        
+        // デバッグログ
+        console.log(`イベント検索中 - タイトル: ${title}`);
+        if (description) {
+          console.log(`イベント検索中 - 説明文: ${description}`);
+        }
+        
+        // 複数のパターンでチェック
+        // パターン1: 古い形式 "(userId)"
+        if (title.includes(`(${userId})`)) {
+          console.log(`パターン1で一致: ${title}`);
+          return true;
+        }
+        // パターン2: 新しい形式 "ユーザーID: (userId)"
+        if (title.includes(`ユーザーID: (${userId})`)) {
+          console.log(`パターン2で一致: ${title}`);
+          return true;
+        }
+        // パターン3: 説明文の中に "ユーザーID: userId"
+        if (description && description.includes(`ユーザーID: ${userId}`)) {
+          console.log(`パターン3で一致: ${description}`);
+          return true;
+        }
+        
+        return false;
+      } catch (e) {
+        console.error("イベントタイトル取得エラー:", e);
+        return false;
+      }
+    });
+    
+    console.log(`ユーザー ${userId} の予約: ${userEvents.length} 件`);
+    
+    // 日付でソート
+    userEvents.sort((a, b) => a.getStartTime() - b.getStartTime());
+    
+    return userEvents;
+  } catch (error) {
+    console.error("予約取得エラー:", error);
+    return []; // エラー時は空の配列を返す
+  }
+}
+
+/**
+ * スプレッドシートに予約情報を記録
+ */
+function recordReservationToSheet(reservation) {
+  try {
+    // スプレッドシートを取得または作成
+    const sheet = getOrCreateReservationSheet();
+    
+    // 予約情報をスプレッドシートに追加
+    sheet.appendRow([
+      reservation.eventId,
+      reservation.userId,
+      reservation.userName,
+      reservation.date,
+      reservation.time,
+      reservation.isoDate,
+      reservation.startHour,
+      reservation.status,
+      Utilities.formatDate(reservation.timestamp, TIME_ZONE, 'yyyy-MM-dd HH:mm:ss')
+    ]);
+    
+    console.log(`予約情報をスプレッドシートに記録: ${reservation.date} ${reservation.time}`);
+    return true;
+  } catch (error) {
+    console.error("スプレッドシート記録エラー:", error);
+    return false;
+  }
+}
+
+/**
+ * 予約ステータスを更新
+ */
+function updateReservationStatus(eventId, status, note) {
+  try {
+    const sheet = getOrCreateReservationSheet();
+    const data = sheet.getDataRange().getValues();
+    
+    // イベントIDに一致する行を検索
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === eventId) {
+        // ステータスを更新（列のインデックスはスプレッドシートの構造に合わせて調整）
+        sheet.getRange(i + 1, 8).setValue(status);
+        
+        // 備考欄に追記（列が存在する場合）
+        if (sheet.getLastColumn() >= 10) {
+          sheet.getRange(i + 1, 10).setValue(note);
+        } else {
+          // 備考欄が存在しない場合は追加
+          sheet.getRange(i + 1, 10).setValue(note);
+        }
+        
+        console.log(`予約ステータスを更新: ${eventId} -> ${status}`);
+        return true;
+      }
+    }
+    
+    console.log(`更新対象の予約が見つかりません: ${eventId}`);
+    return false;
+  } catch (error) {
+    console.error("ステータス更新エラー:", error);
+    return false;
+  }
+}
+
+/**
+ * 予約一覧をFlexMessageで表示
+ */
+function sendReservationListFlexMessage(replyToken, userId, reservations) {
+  try {
+    // 最大5件の予約を表示
+    const displayReservations = reservations.slice(0, 5);
+    
+    // 予約がない場合のメッセージ
+    if (displayReservations.length === 0) {
+      sendLineMessage(replyToken, [{
+        type: "text",
+        text: "現在、予約はありません。「予約」と送信して新しい予約を作成できます。",
+        quickReply: {
+          items: [{
+            type: "action",
+            action: {
+              type: "message",
+              label: "予約する",
+              text: "予約"
+            }
+          }]
+        }
+      }]);
+      return;
+    }
+    
+    // 各予約のカード項目を作成
+    const reservationItems = displayReservations.map((reservation, index) => {
+      const startTime = reservation.getStartTime();
+      const endTime = reservation.getEndTime();
+      const eventId = reservation.getId();
+      
+      const dateStr = formatDateWithDay(startTime);
+      const timeStr = `${startTime.getHours()}:00～${endTime.getHours()}:00`;
+      
+      return {
+        "type": "box",
+        "layout": "vertical",
+        "margin": "xxl",
+        "spacing": "sm",
+        "contents": [
+          {
+            "type": "text",
+            "text": `予約 ${index + 1}`,
+            "size": "xs",
+            "color": "#aaaaaa",
+            "weight": "bold"
+          },
+          {
+            "type": "box",
+            "layout": "horizontal",
+            "contents": [
+              {
+                "type": "text",
+                "text": "日付",
+                "size": "sm",
+                "color": "#555555",
+                "flex": 1
+              },
+              {
+                "type": "text",
+                "text": dateStr,
+                "size": "sm",
+                "color": "#111111",
+                "align": "end",
+                "wrap": true,
+                "flex": 2
+              }
+            ]
+          },
+          {
+            "type": "box",
+            "layout": "horizontal",
+            "contents": [
+              {
+                "type": "text",
+                "text": "時間",
+                "size": "sm",
+                "color": "#555555",
+                "flex": 1
+              },
+              {
+                "type": "text",
+                "text": timeStr,
+                "size": "sm",
+                "color": "#111111",
+                "align": "end",
+                "flex": 2
+              }
+            ]
+          },
+          {
+            "type": "button",
+            "style": "link",
+            "height": "sm",
+            "action": {
+              "type": "message",
+              "label": "この予約をキャンセル",
+              "text": `キャンセル:${eventId}`
+            },
+            "color": "#ff5551",
+            "margin": "md"
+          }
+        ]
+      };
+    });
+    
+    // 予約一覧のFlexMessage
+    const flexMessage = {
+      "type": "flex",
+      "altText": "予約一覧",
+      "contents": {
+        "type": "bubble",
+        "size": "mega",
+        "header": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "text",
+              "text": "現在の予約一覧",
+              "weight": "bold",
+              "size": "lg",
+              "align": "center",
+              "color": "#ffffff"
+            }
+          ],
+          "backgroundColor": "#28A745",
+          "paddingTop": "md",
+          "paddingBottom": "md"
+        },
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": reservationItems.length > 0 ? reservationItems : [{
+            "type": "text",
+            "text": "現在、予約はありません。",
+            "size": "md",
+            "color": "#555555",
+            "align": "center",
+            "margin": "xl"
+          }]
+        },
+        "footer": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "button",
+              "style": "primary",
+              "action": {
+                "type": "message",
+                "label": "新規予約",
+                "text": "予約"
+              },
+              "color": "#28A745"
+            }
+          ]
+        }
+      }
+    };
+    
+    sendLineMessage(replyToken, [flexMessage]);
+    
+  } catch (error) {
+    console.error("予約一覧FlexMessage作成エラー:", error);
+    
+    // エラー時はシンプルなテキストメッセージで対応
+    const fallbackMessage = {
+      type: "text",
+      text: "予約一覧の表示中にエラーが発生しました。もう一度お試しください。",
+      quickReply: {
+        items: [{
+          type: "action",
+          action: {
+            type: "message",
+            label: "予約する",
+            text: "予約"
+          }
+        }]
+      }
+    };
+    
+    sendLineMessage(replyToken, [fallbackMessage]);
+  }
+}
+
+/**
+ * 予約キャンセル確認画面を表示
+ */
+/**
+ * 予約キャンセル処理（確定）
+ */
+function handleCancellationConfirmed(replyToken, userId) {
+  console.log(`予約キャンセル確定: ユーザーID ${userId}`);
+  
+  try {
+    // 一時保存からイベントIDを取得
+    const eventId = getUserTemp(userId, "cancelEventId");
+    if (!eventId) {
+      sendLineMessage(replyToken, [{
+        type: "text",
+        text: "キャンセル情報が見つかりません。もう一度「予約確認」から操作してください。"
+      }]);
+      return;
+    }
+    
+    // カレンダーからイベントを取得
+    const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+    const event = calendar.getEventById(eventId);
+    
+    if (!event) {
+      sendLineMessage(replyToken, [{
+        type: "text",
+        text: "指定された予約が見つかりません。すでにキャンセル済みか、存在しない予約です。"
+      }]);
+      removeUserTemp(userId);
+      return;
+    }
+    
+    // イベントタイトルとディスクリプションを取得
+    const title = event.getTitle();
+    const description = event.getDescription();
+    
+    // ユーザーIDが含まれているか確認（複数のパターンをチェック）
+    let hasPermission = false;
+    
+    // パターン1: 古い形式 "(userId)"
+    if (title.includes(`(${userId})`)) {
+      hasPermission = true;
+    }
+    // パターン2: 新しい形式 "ユーザーID: (userId)"
+    else if (title.includes(`ユーザーID: (${userId})`)) {
+      hasPermission = true;
+    }
+    // パターン3: 説明文の中に "ユーザーID: userId"
+    else if (description && description.includes(`ユーザーID: ${userId}`)) {
+      hasPermission = true;
+    }
+    
+    if (!hasPermission) {
+      sendLineMessage(replyToken, [{
+        type: "text",
+        text: "この予約をキャンセルする権限がありません。"
+      }]);
+      removeUserTemp(userId);
+      return;
+    }
+    
+    // 予約情報を取得してから削除
+    const startTime = event.getStartTime();
+    const endTime = event.getEndTime();
+    const dateStr = formatDateWithDay(startTime);
+    const timeStr = `${startTime.getHours()}:00～${endTime.getHours()}:00`;
+    
+    // スプレッドシートの予約ステータスを更新
+    updateReservationStatus(eventId, "キャンセル済", `${userId}がキャンセル（${new Date()}）`);
+    
+    // イベント削除
+    event.deleteEvent();
+    
+    // 一時データを削除
+    removeUserTemp(userId);
+    
+    // キャンセル完了メッセージ
+    sendCancellationCompleteMessage(replyToken, dateStr, timeStr);
+    
+  } catch (error) {
+    console.error("キャンセル処理エラー:", error);
+    sendLineMessage(replyToken, [{
+      type: "text",
+      text: "キャンセル処理中にエラーが発生しました。もう一度お試しください。"
+    }]);
+  }
+}
+
+/**
+ * キャンセル完了メッセージを送信
+ */
+function sendCancellationCompleteMessage(replyToken, dateStr, timeStr) {
+  const completeMessage = {
+    "type": "flex",
+    "altText": "予約キャンセル完了",
+    "contents": {
+      "type": "bubble",
+      "size": "kilo",
+      "header": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": "予約キャンセル完了",
+            "weight": "bold",
+            "size": "lg",
+            "align": "center",
+            "color": "#ffffff"
+          }
+        ],
+        "backgroundColor": "#696969",
+        "paddingTop": "md",
+        "paddingBottom": "md"
+      },
+      "body": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": "以下の予約をキャンセルしました",
+            "size": "sm",
+            "color": "#888888",
+            "align": "center",
+            "margin": "md"
+          },
+          {
+            "type": "box",
+            "layout": "vertical",
+            "margin": "lg",
+            "spacing": "sm",
+            "contents": [
+              {
+                "type": "box",
+                "layout": "horizontal",
+                "contents": [
+                  {
+                    "type": "text",
+                    "text": "日付",
+                    "size": "sm",
+                    "color": "#555555",
+                    "flex": 1
+                  },
+                  {
+                    "type": "text",
+                    "text": dateStr,
+                    "size": "sm",
+                    "color": "#111111",
+                    "align": "end",
+                    "wrap": true,
+                    "flex": 2
+                  }
+                ]
+              },
+              {
+                "type": "box",
+                "layout": "horizontal",
+                "contents": [
+                  {
+                    "type": "text",
+                    "text": "時間",
+                    "size": "sm",
+                    "color": "#555555",
+                    "flex": 1
+                  },
+                  {
+                    "type": "text",
+                    "text": timeStr,
+                    "size": "sm",
+                    "color": "#111111",
+                    "align": "end",
+                    "flex": 2
+                  }
+                ],
+                "margin": "sm"
+              }
+            ]
+          }
+        ]
+      },
+      "footer": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "button",
+            "style": "primary",
+            "action": {
+              "type": "message",
+              "label": "新規予約はこちら",
+              "text": "予約"
+            },
+            "color": "#28A745"
+          }
+        ]
+      }
+    }
+  };
+  
+  sendLineMessage(replyToken, [completeMessage]);
+}
+
+function handleCancellationConfirmation(replyToken, userId, eventId) {
+  console.log(`予約キャンセル確認: ユーザーID ${userId}, イベントID ${eventId}`);
+  
+  try {
+    // カレンダーからイベントを取得
+    const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+    const event = calendar.getEventById(eventId);
+    
+    if (!event) {
+      sendLineMessage(replyToken, [{
+        type: "text",
+        text: "指定された予約が見つかりません。すでにキャンセル済みか、存在しない予約です。"
+      }]);
+      return;
+    }
+    
+    // イベントタイトルとディスクリプションを取得
+    const title = event.getTitle();
+    const description = event.getDescription();
+    
+    console.log(`イベントタイトル: ${title}`);
+    console.log(`イベント説明文: ${description}`);
+    
+    // ユーザーIDが含まれているか確認（複数のパターンをチェック）
+    let hasPermission = false;
+    
+    // パターン1: 古い形式 "(userId)"
+    if (title.includes(`(${userId})`)) {
+      hasPermission = true;
+    }
+    // パターン2: 新しい形式 "ユーザーID: (userId)"
+    else if (title.includes(`ユーザーID: (${userId})`)) {
+      hasPermission = true;
+    }
+    // パターン3: 説明文の中に "ユーザーID: userId"
+    else if (description && description.includes(`ユーザーID: ${userId}`)) {
+      hasPermission = true;
+    }
+    
+    console.log(`ユーザー ${userId} のキャンセル権限: ${hasPermission}`);
+    
+    if (!hasPermission) {
+      sendLineMessage(replyToken, [{
+        type: "text",
+        text: "この予約をキャンセルする権限がありません。"
+      }]);
+      return;
+    }
+    
+    // 予約情報を取得
+    const startTime = event.getStartTime();
+    const endTime = event.getEndTime();
+    const dateStr = formatDateWithDay(startTime);
+    const timeStr = `${startTime.getHours()}:00～${endTime.getHours()}:00`;
+    
+    // 一時保存
+    saveUserTemp(userId, "cancelEventId", eventId);
+    
+    // キャンセル確認用FlexMessage
+    const cancelConfirmMessage = {
+      "type": "flex",
+      "altText": "予約キャンセルの確認",
+      "contents": {
+        "type": "bubble",
+        "size": "kilo",
+        "header": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "text",
+              "text": "予約キャンセルの確認😢",
+              "weight": "bold",
+              "size": "lg",
+              "align": "center",
+              "color": "#ffffff"
+            }
+          ],
+          "backgroundColor": "#696969",
+          "paddingTop": "md",
+          "paddingBottom": "md"
+        },
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "text",
+              "text": "以下の予約をキャンセルしますか？",
+              "size": "sm",
+              "color": "#888888",
+              "align": "center",
+              "margin": "md"
+            },
+            {
+              "type": "box",
+              "layout": "vertical",
+              "margin": "lg",
+              "spacing": "sm",
+              "contents": [
+                {
+                  "type": "box",
+                  "layout": "horizontal",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "日付",
+                      "size": "sm",
+                      "color": "#555555",
+                      "flex": 1
+                    },
+                    {
+                      "type": "text",
+                      "text": dateStr,
+                      "size": "sm",
+                      "color": "#111111",
+                      "align": "end",
+                      "wrap": true,
+                      "flex": 2
+                    }
+                  ]
+                },
+                {
+                  "type": "box",
+                  "layout": "horizontal",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "時間",
+                      "size": "sm",
+                      "color": "#555555",
+                      "flex": 1
+                    },
+                    {
+                      "type": "text",
+                      "text": timeStr,
+                      "size": "sm",
+                      "color": "#111111",
+                      "align": "end",
+                      "flex": 2
+                    }
+                  ],
+                  "margin": "sm"
+                }
+              ]
+            }
+          ]
+        },
+        "footer": {
+          "type": "box",
+          "layout": "vertical",
+          "spacing": "sm",
+          "contents": [
+            {
+              "type": "button",
+              "style": "primary",
+              "action": {
+                "type": "message",
+                "label": "キャンセルする",
+                "text": "キャンセルする"
+              },
+              "color": "#696969"
+            },
+            {
+              "type": "button",
+              "style": "secondary",
+              "action": {
+                "type": "message",
+                "label": "キャンセルしない",
+                "text": "キャンセルしない"
+              }
+            }
+          ]
+        }
+      }
+    };
+    
+    sendLineMessage(replyToken, [cancelConfirmMessage]);
+    
+  } catch (error) {
+    console.error("キャンセル確認処理エラー:", error);
+    sendLineMessage(replyToken, [{
+      type: "text",
+      text: "キャンセル確認処理中にエラーが発生しました。もう一度お試しください。"
+    }]);
+  }
+}
+
+/**
+ * 日付選択画面を送信
+ */
+function sendDateSelection(replyToken, additionalMessages = []) {
+  console.log("日付選択画面を送信");
+  
+  const availableDates = getAvailableDates();
+  
+  // Flex Messageでカレンダー形式の日付選択を作成
+  const calendarMessage = createCalendarFlexMessage(availableDates);
+  
+  const messages = [...additionalMessages, calendarMessage];
+  
+  sendLineMessage(replyToken, messages);
+}
+
+/**
+ * 時間選択画面を送信
+ */
+function sendTimeSelection(replyToken, userId, date) {
+  // 選択した日付の予約可能な時間枠を取得
+  const availableTimeSlots = getAvailableTimeSlots(date);
+  
+  if (availableTimeSlots.length === 0) {
+    sendLineMessage(replyToken, [{
+      type: "text",
+      text: `選択した日は予約可能な時間がありません。別の日を選択してください。`,
+      quickReply: {
+        items: [{
+          type: "action",
+          action: {
+            type: "message",
+            label: "日付を選び直す",
+            text: "予約"
+          }
+        }]
+      }
+    }]);
+    return;
+  }
+  
+  // 選択された日付の表示
+  const selectedDate = formatDateWithDay(date);
+  
+  // Flex Messageで時間選択UIを作成
+  const timeSelectionMessage = createTimeSelectionFlexMessage(selectedDate, availableTimeSlots);
+  
+  sendLineMessage(replyToken, [timeSelectionMessage]);
+}
+
+/**
+ * 週ごとのカレンダーコンテンツを作成（2列6行表示）
+ */
+function createWeekCalendarContent(weekDates, weekTitle, weekIndex) {
+  const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
+  
+  // 日付ボタンを作成
+  const dateButtons = weekDates.map(d => {
+    const day = d.date.getDate();
+    const month = d.date.getMonth() + 1;
+    const dayOfWeek = d.date.getDay();
+    
+    // 曜日ごとの色とスタイル設定
+    let textColor, buttonStyle;
+    
+    if (dayOfWeek === 0) {
+      // 日曜日: 背景白、ラベル赤
+      textColor = "#d91a1a"; // 文字色を赤に
+      buttonStyle = "link";   // 基本スタイルをlinkに（背景色を直接指定するため）
+    } else if (dayOfWeek === 6) {
+      // 土曜日: 背景薄い青、ラベル青
+      textColor = "#065ad6";
+      buttonStyle = "link"; // primary スタイルは青背景
+    } else {
+      // 平日: 背景薄い灰色、ラベル黒
+      textColor = "#333333";
+      buttonStyle = "link"; // link スタイルは通常灰色背景
+    }
+    
+    // ボタンの代わりにボックスレイアウトを使用して枠線を追加
+    return {
+      "type": "box",
+      "layout": "vertical",
+      "borderColor": "#000000",
+      "borderWidth": "1px",
+      "cornerRadius": "12px",
+      "margin": "xs",
+      "flex": 1,
+      "contents": [
+        {
+          "type": "button",
+          "action": {
+            "type": "message",
+            "label": `${month}/${day}(${dayNames[dayOfWeek]})`,
+            "text": d.dateStr
+          },
+          "color": textColor,
+          "style": buttonStyle,
+          "height": "sm",
+          "adjustMode": "shrink-to-fit"
+        }
+      ]
+    };
+  });
+  
+  // 2列で表示するために、日付ボタンを2つずつグループ化
+  const rows = [];
+  for (let i = 0; i < dateButtons.length; i += 2) {
+    const rowButtons = [dateButtons[i]];
+    
+    // 2つ目のボタンを追加（存在する場合）
+    if (i + 1 < dateButtons.length) {
+      rowButtons.push(dateButtons[i + 1]);
+    } else {
+      // 奇数個の場合、空のスペースを追加して整列
+      rowButtons.push({
+        "type": "filler"
+      });
+    }
+    
+    rows.push({
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "xs",
+      "contents": rowButtons,
+      "spacing": "xs"
+    });
+  }
+  
+  // 表示可能な行数を7行に制限
+  const maxRows = 7; // 【編集箇所】
+  const displayedRows = rows.slice(0, maxRows);
+  
+  // 週表示のコンテナを作成
+  return {
+    "type": "bubble",
+    "size": "mega",
+    "header": {
+      "type": "box",
+      "layout": "vertical",
+      "contents": [
+        {
+          "type": "text",
+          "text": ` ${weekTitle}`,
+          "weight": "bold",
+          "size": "md",
+          "align": "center"
+        },
+        {
+          "type": "text",
+          "text": "予約希望日を選択してください",
+          "size": "sm",
+          "color": "#888888",
+          "align": "center",
+          "margin": "md"
+        }
+      ],
+      "paddingBottom": "md"
+    },
+    "body": {
+      "type": "box",
+      "layout": "vertical",
+      "spacing": "sm",
+      "contents": displayedRows,
+      "paddingAll": "md" // 余白を追加して見やすく
+    }
+  };
+}
+
+/**
+ * Flex Messageでカレンダー形式の日付選択UIを作成（週単位）
+ */
+function createCalendarFlexMessage(availableDates) {
+  // 今日の日付を取得
+  const today = new Date();
+  
+  // 日付を「YYYY年MM月DD日（曜日）」形式からDateオブジェクトに変換
+  const dateObjects = availableDates.map(dateStr => {
+    return {
+      dateStr: dateStr,
+      date: parseDateString(dateStr)
+    };
+  });
+  
+  // 6日ごとにグループ化（1カルーセル当たり7日表示）
+  const dateGroups = [];
+  for (let i = 0; i < dateObjects.length; i += 7) {
+    dateGroups.push(dateObjects.slice(i, i + 7));
+  } // 【編集箇所】
+  
+  // 各グループのカレンダーコンテンツを作成
+  const groupCalendars = dateGroups.map((group, index) => {
+    // グループの開始日と終了日
+    const startDate = group[0].date;
+    const endDate = group[group.length - 1].date;
+    
+    // グループのタイトル（例：5月1日～5月6日）
+    const groupTitle = `${(startDate.getMonth() + 1)}月${startDate.getDate()}日～${(endDate.getMonth() + 1)}月${endDate.getDate()}日`;
+    
+    return createWeekCalendarContent(group, groupTitle, index);
+  });
+  
+  // Flex Messageのカルーセル形式で表示
+  return {
+    "type": "flex",
+    "altText": "予約日を選択してください",
+    "contents": {
+      "type": "carousel",
+      "contents": groupCalendars
+    }
+  };
+}
+
+/**
+ * 時間選択用のFlexMessageを作成（2列表示）
+ */
+function createTimeSelectionFlexMessage(selectedDate, availableTimeSlots) {
+  // 時間ボタンを作成（枠線付き、背景白）
+  const timeButtons = availableTimeSlots.map(slot => {
+    return {
+      "type": "box",
+      "layout": "vertical",
+      "borderColor": "#000000",
+      "borderWidth": "1px",
+      "cornerRadius": "12px",
+      "margin": "xs",
+      "flex": 1,
+      "contents": [
+        {
+          "type": "button",
+          "action": {
+            "type": "message",
+            "label": `${slot.hour}時`,
+            "text": `${slot.hour}時`
+          },
+          "style": "link", // link スタイルは白背景
+          "color": "#000000", // テキストカラーを黒に設定
+          "height": "sm",
+          "adjustMode": "shrink-to-fit"
+        }
+      ]
+    };
+  });
+  
+  // 時間ボタンを2つずつ行にグループ化
+  const rows = [];
+  for (let i = 0; i < timeButtons.length; i += 2) {
+    const rowButtons = [timeButtons[i]];
+    
+    // 2つ目のボタンを追加（存在する場合）
+    if (i + 1 < timeButtons.length) {
+      rowButtons.push(timeButtons[i + 1]);
+    } else {
+      // 奇数個の場合、空のスペースを追加して整列
+      rowButtons.push({
+        "type": "filler"
+      });
+    }
+    
+    rows.push({
+      "type": "box",
+      "layout": "horizontal",
+      "margin": "xs",
+      "contents": rowButtons,
+      "spacing": "xs"
+    });
+  }
+  
+  // 時間選択のFlexMessageを作成
+  return {
+    "type": "flex",
+    "altText": "予約時間を選択してください",
+    "contents": {
+      "type": "bubble",
+      "size": "mega",
+      "header": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "text",
+            "text": selectedDate,
+            "weight": "bold",
+            "size": "md",
+            "align": "center",
+            "wrap": true
+          },
+          {
+            "type": "text",
+            "text": "予約希望時間を選択してください",
+            "size": "sm",
+            "color": "#888888",
+            "align": "center",
+            "margin": "md"
+          }
+        ],
+        "paddingBottom": "md"
+      },
+      "body": {
+        "type": "box",
+        "layout": "vertical",
+        "spacing": "sm",
+        "contents": rows,
+        "paddingAll": "md"
+      },
+      "footer": {
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+          {
+            "type": "box",
+            "layout": "vertical",
+            "borderColor": "#000000",
+            "borderWidth": "1px",
+            "cornerRadius": "12px",
+            "contents": [
+              {
+                "type": "button",
+                "action": {
+                  "type": "message",
+                  "label": "日付を選び直す",
+                  "text": "予約"
+                },
+                "style": "secondary",
+                "height": "sm",
+                "adjustMode": "shrink-to-fit"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  };
+}
+
+/**
+ * LINEにメッセージを送信する関数
+ */
+function sendLineMessage(replyToken, messages) {
+  const url = "https://api.line.me/v2/bot/message/reply";
+  const payload = {
+    replyToken: replyToken,
+    messages: messages
+  };
+  
+  const options = {
+    method: "post",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${LINE_ACCESS_TOKEN}`
+    },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+  
+  try {
+    console.log("LINE API送信開始:", JSON.stringify(payload).substring(0, 500) + "...");
+    const response = UrlFetchApp.fetch(url, options);
+    const status = response.getResponseCode();
+    const responseBody = response.getContentText();
+    
+    console.log(`LINE API レスポンス: ステータス=${status}`);
+    
+    if (status != 200) {
+      console.error("LINE API エラー:", responseBody);
+      return false;
+    }
+    
+    console.log("LINE API送信成功");
+    return true;
+  } catch (error) {
+    console.error("LINE API 例外:", error, error.stack);
+    return false;
+  }
+}
+
+/**
+ * LINEにプッシュメッセージを送信
+ */
+function sendPushMessage(userId, messages) {
+  const url = "https://api.line.me/v2/bot/message/push";
+  const payload = {
+    to: userId,
+    messages: messages
+  };
+  
+  const options = {
+    method: "post",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${LINE_ACCESS_TOKEN}`
+    },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+  
+  try {
+    console.log("プッシュメッセージ送信:", JSON.stringify(payload));
+    const response = UrlFetchApp.fetch(url, options);
+    const status = response.getResponseCode();
+    
+    if (status != 200) {
+      console.error("プッシュメッセージ送信エラー:", response.getContentText());
+    }
+  } catch (error) {
+    console.error("プッシュメッセージ送信例外:", error);
+  }
+}
+
+/**
+ * LINEユーザーのプロフィールを取得
+ */
+function getUserProfile(userId) {
+  const url = `https://api.line.me/v2/bot/profile/${userId}`;
+  const options = {
+    method: "get",
+    headers: {
+      "Authorization": `Bearer ${LINE_ACCESS_TOKEN}`
+    },
+    muteHttpExceptions: true
+  };
+  
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    if (response.getResponseCode() === 200) {
+      return JSON.parse(response.getContentText());
+    }
+    console.error("プロフィール取得エラー:", response.getContentText());
+    return null;
+  } catch (error) {
+    console.error("プロフィール取得例外:", error);
+    return null;
+  }
+}
+
+/**
+ * ユーザー表示名を取得
+ */
+function getUserDisplayName(userId) {
+  try {
+    // 会員情報を最初にチェック
+    const memberInfo = getMemberInfo(userId);
+    if (memberInfo && memberInfo.name) {
+      return memberInfo.name;
+    }
+    
+    // 会員情報がなければLINEプロフィールを使用
+    const userProfile = getUserProfile(userId);
+    if (userProfile && userProfile.displayName) {
+      return userProfile.displayName;
+    }
+  } catch (e) {
+    console.error("ユーザープロフィール取得エラー:", e);
+  }
+  return "お客様";
+}
+
+/**
+ * Webhookからのリクエストを受け取る関数
+ */
+function doPost(e) {
+  try {
+    // デバッグログ
+    console.log("doPost関数が実行されました");
+    
+    // e と e.postData と e.postData.contents の存在チェック
+    if (e && e.postData && e.postData.contents) {
+      console.log("受信データ:", e.postData.contents);
+      
+      const data = JSON.parse(e.postData.contents);
+      
+      // イベントチェック
+      if (!data || !data.events || data.events.length === 0) {
+        console.log("有効なイベントがありません");
+        return ContentService.createTextOutput(JSON.stringify({ status: 'ok' }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      const event = data.events[0];
+      
+      // リプライトークンチェック
+      if (!event.replyToken || event.replyToken === '00000000000000000000000000000000') {
+        console.log("有効なリプライトークンがありません");
+        return ContentService.createTextOutput(JSON.stringify({ status: 'ok' }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      // イベントタイプに応じた分岐処理
+      if (event.type === "message" && event.message.type === "text") {
+        // テキストメッセージ処理
+        const userMessage = event.message.text;
+        const userId = event.source.userId;
+        const replyToken = event.replyToken;
+        
+        console.log(`ユーザーID: ${userId}, メッセージ: ${userMessage}`);
+        handleUserMessage(userMessage, userId, replyToken);
+      } else if (event.type === "postback") {
+        // ポストバックデータ処理
+        const replyToken = event.replyToken;
+        const userId = event.source.userId;
+        const postbackData = event.postback.data;
+        
+        console.log(`ユーザーID: ${userId}, ポストバックデータ: ${postbackData}`);
+        handlePostback(event);
+      }
+    } else {
+      console.log("リクエストデータが不完全です:", e);
+    }
+    
+  } catch (error) {
+    console.error("エラー発生:", error, error.stack);
+  }
+  
+  return ContentService.createTextOutput(JSON.stringify({ status: 'ok' }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * postbackイベントを処理
+ */
+function handlePostback(event) {
+  const userId = event.source.userId;
+  const replyToken = event.replyToken;
+  const data = event.postback.data;
+  
+  if (data.startsWith('action=confirm_reservation')) {
+    finalizeReservation(replyToken, userId);
+  }
+}
+
+/**
+ * ユーザーメッセージの処理分岐
+ */
+function handleUserMessage(userMessage, userId, replyToken) {
+  try {
+    console.log(`メッセージ処理開始: ${userMessage} (ユーザーID: ${userId})`);
+    
+    // 現在のステップを確認
+    const currentStep = getUserTemp(userId, "member_step");
+    console.log(`現在のステップ: ${currentStep || "なし"}`);
+    
+    // テストコマンド
+    if (userMessage === "テスト") {
+      sendLineMessage(replyToken, [{
+        type: "text",
+        text: "予約システムは正常に動作しています。「予約」と送信して予約を開始するか、「予約確認」で現在の予約を確認できます。「会員登録」で会員情報を登録できます。",
+        quickReply: {
+          items: [
+            {
+              type: "action",
+              action: {
+                type: "message",
+                label: "予約する",
+                text: "予約"
+              }
+            },
+            {
+              type: "action",
+              action: {
+                type: "message",
+                label: "会員登録",
+                text: "会員登録"
+              }
+            }
+          ]
+        }
+      }]);
+      return;
+    }
+    
+    // メインコマンド
+    if (userMessage === "予約") {
+      // 会員登録済みかチェック
+      const memberInfo = getMemberInfo(userId);
+      if (!memberInfo) {
+        // 未登録の場合、会員登録を促す
+        sendLineMessage(replyToken, [{
+          type: "text",
+          text: "予約前に会員登録をお願いします。「会員登録」と送信して、登録を開始してください。",
+          quickReply: {
+            items: [{
+              type: "action",
+              action: {
+                type: "message",
+                label: "会員登録",
+                text: "会員登録"
+              }
+            }]
+          }
+        }]);
+        return;
+      }
+      
+handleReservationStart(replyToken, userId);
+    } else if (userMessage === "会員登録") {
+      // 会員登録フォーム開始
+      startMemberRegistration(replyToken, userId);
+    } else if (userMessage && typeof userMessage === 'string' && userMessage.match(/^\d{4}年\d{1,2}月\d{1,2}日（[日月火水木金土]）$/)) {
+      // 日付選択後
+      handleDateSelection(replyToken, userId, userMessage);
+    } else if (userMessage && typeof userMessage === 'string' && userMessage.match(/^(\d{1,2})時$/)) {
+      // 時間選択後（新フォーマット）
+      const matches = userMessage.match(/^(\d{1,2})時$/);
+      if (matches && matches.length > 1) {
+        const hour = parseInt(matches[1]);
+        handleHourSelection(replyToken, userId, hour);
+      } else {
+        console.log("時間フォーマットの解析に失敗:", userMessage);
+        sendLineMessage(replyToken, [{
+          type: "text",
+          text: "時間の形式が正しくありません。もう一度お試しください。"
+        }]);
+      }
+    } else if (userMessage === "予約確認") {
+      // 予約確認
+      handleReservationConfirmation(replyToken, userId);
+    } else if (userMessage && typeof userMessage === 'string' && userMessage.startsWith("キャンセル:")) {
+      // 予約キャンセル確認画面
+      const eventId = userMessage.split(":")[1];
+      handleCancellationConfirmation(replyToken, userId, eventId);
+    } else if (userMessage === "キャンセルする") {
+      // キャンセル確定
+      handleCancellationConfirmed(replyToken, userId);
+    } else if (userMessage === "キャンセルしない") {
+      // キャンセル操作の中止
+      removeUserTemp(userId);
+      sendLineMessage(replyToken, [{
+        type: "text",
+        text: "キャンセル操作を中止しました。"
+      }]);
+    } else if (userMessage === "予約を確定する") {
+      finalizeReservation(replyToken, userId);
+    } else if (userMessage === "会員登録を確定する") {
+      // 会員登録確定
+      finalizeMemberRegistration(replyToken, userId);
+    } else {
+      // 会員登録フォームの各ステップ処理
+      const memberStep = getUserTemp(userId, "member_step");
+      console.log(`会員登録ステップ: ${memberStep}`);
+      
+      if (memberStep === "name_input") {
+        console.log("名前入力処理");
+        // 入力された名前を保存
+        saveUserTemp(userId, "member_name", userMessage);
+        saveUserTemp(userId, "member_step", "email_input");
+        
+        // メールアドレス入力画面を表示
+        sendEmailInputForm(replyToken);
+        return;
+      } else if (memberStep === "email_input") {
+        console.log("メールアドレス入力処理");
+        // メールアドレスの簡易バリデーション
+        if (!userMessage.includes('@') || !userMessage.includes('.')) {
+          sendLineMessage(replyToken, [{
+            type: "text",
+            text: "有効なメールアドレスを入力してください。"
+          }]);
+          return;
+        }
+        
+        // 入力されたメールアドレスを保存
+        saveUserTemp(userId, "member_email", userMessage);
+        saveUserTemp(userId, "member_step", "phone_input");
+        
+        // 電話番号入力画面を表示
+        sendPhoneInputForm(replyToken);
+        return;
+      } else if (memberStep === "phone_input") {
+        console.log("電話番号入力処理");
+        // 電話番号の簡易バリデーション（数字とハイフンのみ）
+        if (!userMessage.match(/^[0-9\-]+$/)) {
+          sendLineMessage(replyToken, [{
+            type: "text",
+            text: "有効な電話番号を入力してください。ハイフン(-)を含む形式でご入力ください。"
+          }]);
+          return;
+        }
+        
+        // 入力された電話番号を保存
+        saveUserTemp(userId, "member_phone", userMessage);
+        saveUserTemp(userId, "member_step", "confirmation");
+        
+        console.log("確認画面表示へ進みます");
+        // 入力内容の確認画面を表示
+        sendMemberConfirmationForm(replyToken, userId);
+        return;
+      } else if (memberStep === "confirmation") {
+        console.log("確認ステップでの不明な入力: " + userMessage);
+        sendLineMessage(replyToken, [{
+          type: "text",
+          text: "会員登録を確定するには、「会員登録を確定する」ボタンを押してください。"
+        }]);
+        return;
+      }
+      
+      // その他のメッセージは何も応答しない（自動応答をオフにする）
+      // コマンド一覧を自動表示しないように修正
+      console.log("該当するコマンドではないメッセージを受信: " + userMessage);
+      // ここで応答しないことで、別の対話システムなどで処理できるようにする
+    }
+    
+    // コマンドに該当しない場合は何もしない
+  } catch (error) {
+    console.error("メッセージ処理エラー:", error, error.stack);
+    sendLineMessage(replyToken, [{
+      type: "text",
+      text: "申し訳ありません、エラーが発生しました。しばらくしてからもう一度お試しください。"
+    }]);
+  }
+}
+
+/**
+ * テスト用関数（GASエディタから実行可能）
+ */
+function testLineBot() {
+  const testEvent = {
+    postData: {
+      contents: JSON.stringify({
+        events: [{
+          type: "message",
+          replyToken: "test-reply-token",
+          message: {
+            type: "text",
+            text: "テスト"
+          },
+          source: {
+            userId: "test-user-id"
+          }
+        }]
+      })
+    }
+  };
+  
+  doPost(testEvent);
+  return "テスト実行完了";
+}
+
+/**
+ * システム初期化（一度だけ実行する関数）
+ */
+function initialSetup() {
+  // スプレッドシートの初期化
+  getOrCreateReservationSheet();
+  getOrCreateUserTempSheet();
+  getOrCreateMemberSheet();
+  
+  // トリガーの設定
+  setupTriggers();
+  
+  // テスト実行
+  testLineBot();
+  
+  return "システム初期化完了";
+}
