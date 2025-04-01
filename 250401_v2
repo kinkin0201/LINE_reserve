@@ -22,22 +22,22 @@ const LINE_ACCESS_TOKEN = 'UYCsmsIdqFkjEZ5PwmZXAU4DbbCIktaTlernaiTx89sr0bngauN6m
 const BUSINESS_HOURS = {
   start: 10, // 予約受付開始時間（10時）
   end: 22    // 予約受付終了時間（22時）
-}
+} // 【編集箇所】
 
 // 1人あたりの最大予約数
-const MAX_RESERVATIONS_PER_USER = 3;
+const MAX_RESERVATIONS_PER_USER = 3; // 【編集箇所】
 
 // 各時間枠の最大予約数
-const MAX_SLOTS_PER_TIME = 1;
+const MAX_SLOTS_PER_TIME = 1; // 【編集箇所】
 
 // 予約可能日数（今日から何日先まで予約可能か）
-const DAYS_AHEAD = 30;
+const DAYS_AHEAD = 30; // 【編集箇所】
 
 // 予約可能開始日（今日から何日後から予約可能か）
-const MIN_DAYS_AHEAD = 2;
+const MIN_DAYS_AHEAD = 2; // 【編集箇所】
 
 // 定休日の設定（0:日曜, 1:月曜, 2:火曜, 3:水曜, 4:木曜, 5:金曜, 6:土曜）
-const CLOSED_DAYS = [0]; // 日曜日と木曜日が定休日
+const CLOSED_DAYS = [0]; // 【編集箇所】日曜日が定休日。複数の場合はカンマ（,）区切りにする。
 
 // タイムゾーン設定
 const TIME_ZONE = 'Asia/Tokyo';
@@ -2402,7 +2402,7 @@ function createWeekCalendarContent(weekDates, weekTitle, weekIndex) {
   }
   
   // 表示可能な行数を6行に制限
-  const maxRows = 6;
+  const maxRows = 6; // 【編集箇所】
   const displayedRows = rows.slice(0, maxRows);
   
   // 週表示のコンテナを作成
@@ -2460,7 +2460,7 @@ function createCalendarFlexMessage(availableDates) {
   const dateGroups = [];
   for (let i = 0; i < dateObjects.length; i += 6) {
     dateGroups.push(dateObjects.slice(i, i + 6));
-  }
+  } // 【編集箇所】
   
   // 各グループのカレンダーコンテンツを作成
   const groupCalendars = dateGroups.map((group, index) => {
