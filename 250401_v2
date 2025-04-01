@@ -37,7 +37,7 @@ const DAYS_AHEAD = 30; // 【編集箇所】
 const MIN_DAYS_AHEAD = 2; // 【編集箇所】
 
 // 定休日の設定（0:日曜, 1:月曜, 2:火曜, 3:水曜, 4:木曜, 5:金曜, 6:土曜）
-const CLOSED_DAYS = [0]; // 【編集箇所】日曜日が定休日。複数の場合はカンマ（,）区切りにする。
+const CLOSED_DAYS = [1]; // 【編集箇所】月曜日が定休日。複数の場合はカンマ（,）区切りにする。
 
 // タイムゾーン設定
 const TIME_ZONE = 'Asia/Tokyo';
@@ -2339,12 +2339,12 @@ function createWeekCalendarContent(weekDates, weekTitle, weekIndex) {
     
     if (dayOfWeek === 0) {
       // 日曜日: 背景白、ラベル赤
-      textColor = "#FF5551";
-      buttonStyle = "secondary"; // secondary スタイルは通常白背景
+      textColor = "#d91a1a"; // 文字色を赤に
+      buttonStyle = "link";   // 基本スタイルをlinkに（背景色を直接指定するため）
     } else if (dayOfWeek === 6) {
       // 土曜日: 背景薄い青、ラベル青
-      textColor = "#5181FF";
-      buttonStyle = "primary"; // primary スタイルは青背景
+      textColor = "#065ad6";
+      buttonStyle = "link"; // primary スタイルは青背景
     } else {
       // 平日: 背景薄い灰色、ラベル黒
       textColor = "#333333";
