@@ -10,13 +10,13 @@
 
 // ======= 設定 =======
 // 予約情報登録先のGoogleカレンダーID
-const CALENDAR_ID = 'c_9d24918fa9b40d73dd51c600630ff38b2a96508a8bf5bb25029a89c91947a105@group.calendar.google.com';
+const CALENDAR_ID = 'c_9d24918fa9b40d73dd51c600630ff38b2a96508a8bf5bb25029a89c91947a105@group.calendar.google.com'; // 【編集箇所】
 
 // 予約情報保存用のスプレッドシートID
-const SPREADSHEET_ID = '1EZBFDKrK84mUkhHpMp-8lRUjXaox6Nlz_DqlvYFA2kY'; 
+const SPREADSHEET_ID = '1EZBFDKrK84mUkhHpMp-8lRUjXaox6Nlz_DqlvYFA2kY'; // 【編集箇所】
 
 // LINEチャンネルアクセストークン
-const LINE_ACCESS_TOKEN = 'UYCsmsIdqFkjEZ5PwmZXAU4DbbCIktaTlernaiTx89sr0bngauN6mv+nN1kTSr4dsg8ip4nhX9jHVupm+ddVvrvNkJXxxLGdlUCuLVcr3TnBCNIVHaGWFahME9JH0Qz2ewRcMaK1CYiCZqf7m6y8KQdB04t89/1O/w1cDnyilFU=';
+const LINE_ACCESS_TOKEN = 'UYCsmsIdqFkjEZ5PwmZXAU4DbbCIktaTlernaiTx89sr0bngauN6mv+nN1kTSr4dsg8ip4nhX9jHVupm+ddVvrvNkJXxxLGdlUCuLVcr3TnBCNIVHaGWFahME9JH0Qz2ewRcMaK1CYiCZqf7m6y8KQdB04t89/1O/w1cDnyilFU='; // 【編集箇所】
 
 // 予約タイムスロット設定
 const BUSINESS_HOURS = {
@@ -1397,7 +1397,7 @@ function sendReminderFlexMessage(userId, reservations) {
           "contents": [
             {
               "type": "text",
-              "text": `${userName}様、明日の予約をお知らせします`,
+              "text": `${userName}様 \n明日の予約をお知らせします`,
               "size": "md",
               "wrap": true,
               "margin": "md"
@@ -1420,7 +1420,7 @@ function sendReminderFlexMessage(userId, reservations) {
           "contents": [
             {
               "type": "button",
-              "style": "primary",
+              "style": "#28A745",
               "action": {
                 "type": "message",
                 "label": "予約確認",
@@ -2401,8 +2401,8 @@ function createWeekCalendarContent(weekDates, weekTitle, weekIndex) {
     });
   }
   
-  // 表示可能な行数を6行に制限
-  const maxRows = 6; // 【編集箇所】
+  // 表示可能な行数を7行に制限
+  const maxRows = 7; // 【編集箇所】
   const displayedRows = rows.slice(0, maxRows);
   
   // 週表示のコンテナを作成
@@ -2456,10 +2456,10 @@ function createCalendarFlexMessage(availableDates) {
     };
   });
   
-  // 6日ごとにグループ化（1カルーセル当たり6日表示）
+  // 6日ごとにグループ化（1カルーセル当たり7日表示）
   const dateGroups = [];
-  for (let i = 0; i < dateObjects.length; i += 6) {
-    dateGroups.push(dateObjects.slice(i, i + 6));
+  for (let i = 0; i < dateObjects.length; i += 7) {
+    dateGroups.push(dateObjects.slice(i, i + 7));
   } // 【編集箇所】
   
   // 各グループのカレンダーコンテンツを作成
