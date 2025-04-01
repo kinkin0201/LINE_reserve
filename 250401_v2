@@ -1173,7 +1173,7 @@ function finalizeReservation(replyToken, userId) {
   const userName = getUserDisplayName(userId);
   
   // イベントタイトル（ユーザー名と予約ID用にLINE IDを含める）
-  const eventTitle = `予約者名: ${userName} \nユーザーID: (${userId})`;
+  const eventTitle = `予約者： ${userName} `;
   
   // カレンダーに予約を追加
   try {
