@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>予約フォーム</title>
+    <style>
+      /* スタイル定義 */
+      body { padding: 15px; font-family: sans-serif; }
+      .form-container { max-width: 800px; margin: 0 auto; }
+      .calendar-container { margin-bottom: 20px; overflow-x: auto; }
+      .time-slot {
+        cursor: pointer; padding: 8px; border-radius: 4px; text-align: center;
+        transition: background-color 0.2s; border: 1px solid #ddd; margin: 2px;
+        min-width: 80px; /* 幅を確保 */
+      }
+      .time-slot:hover { background-color: #e9ecef; }
+      .time-slot.selected { background-color: #0d6efd; color: white; border-color: #0d6efd; }
+      .time-slot.available { background-color: #e2f0ff; color: #0a58ca; border-color: #b6d4fe; }
+      .time-slot.unavailable {
+         background-color: #f8f9fa; color: #adb5bd; text-decoration: line-through;
+         cursor: not-allowed; border-color: #e9ecef;
+      }
+      .time-header { text-align: center; font-weight: bold; padding: 8px; vertical-align: middle; width: 60px; }
+      .day-header { text-align: center; font-weight: bold; padding: 8px; background-color: #f8f9fa; }
+      .holiday-cell { background-color: #f8d7da; text-align: center; vertical-align: middle; }
+      .today { background-color: #fff3cd; }
+      table { width: 100%; border-collapse: collapse; } /* テーブルの罫線を結合 */
+      th, td { padding: 5px; text-align: center; border: 1px solid #dee2e6; } /* セルに罫線を追加 */
+      .nav-link { cursor: pointer; }
+      .reservations-list { margin-top: 20px; }
+      .calendar-legend { display: flex; justify-content: center; flex-wrap: wrap; margin-bottom: 15px; gap: 15px; }
+      .legend-item { display: flex; align-items: center; }
+      .legend-color { width: 20px; height: 20px; border-radius: 4px; margin-right: 5px; border: 1px solid #ccc; }
+      #loadingIndicator { text-align: center; padding: 20px; }
+      #result { margin-top: 20px; }
+      /* 土日の色付け */
+      .day-header.sunday { color: #dc3545; } /* 日曜日 */
+      .day-header.saturday { color: #0d6efd; } /* 土曜日 */
+      .holiday-text { font-size: 0.9em; color: #6c757d; }
+    </style>
+</head>
+
+<body>
+  <div class="container form-container">
+    <h2 class="mb-4">予約</h2>
+
+    <ul class="nav nav-tabs mb-3" id="reservationTabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="new-tab" data-bs-toggle="tab" data-bs-target="#new" type="button" role="tab" aria-controls="new" aria-selected="true">新規予約</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="list-tab" data-bs-toggle="tab" data-bs-target="#list" type="button" role="tab" aria-controls="list" aria-selected="false">予約確認・キャンセル</button>
+      </li>
+    </ul>
+
+    <div class="tab-content" id="reservationTabContent">
+
+      <div class="tab-pane fade show active" id="new" role="tabpanel" aria-labelledby="new-tab">
+        <form id="reservationForm">
+          <input type="hidden" id="userId" name="userId" value="<?= userId ?>">
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">お名前:</label>
+              <p class="form-control-plaintext"><?= userName ?></p>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">電話番号:</label>
+              <p class="form-control-plaintext"><?= userPhone ?></p>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="menu" class="form-label">メニュー選択 <span class="text-danger">*</span></label>
+            <select class="form-select" id="menu" name="menu" required>
+              <option value="">選択してください</option>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label for="staff" class="form-label">スタッフ選択 <span class="text-danger">*</span></label>
+            <select class="form-select" id="staff" name="staff" required>
+              <option value="">選択してください</option>
+            </select>
+          </div>
+
+          <hr class="my-4">
+
+          <h4>予約日時の選択 <span class="text-danger">*</span></h4>
+
+          <div class="calendar-legend">
+            <div class="legend-item">
+              <span class="legend-color time-slot available"></span><span>予約可能</span>
+            </div>
+            <div class="legend-item">
+              <span class="legend-color time-slot unavailable" style="text-decoration: none;"></span><span>予約不可</span>
+            </div>
+             <div class="legend-item">
+              <span class="legend-color holiday-cell" style="border: none;"></span><span>定休日</span>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="prevWeek" disabled>&lt; 前の週</button>
+            <div id="currentWeek" class="text-center fw-bold"></div>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="nextWeek" disabled>次の週 &gt;</button>
+          </div>
+
+          <div class="calendar-container table-responsive">
+            <table class="table table-bordered table-sm">
+              <thead id="calendarHeader">
+                <tr id="daysRow">
+                  <th class="time-header">時間</th>
+                </tr>
+              </thead>
+              <tbody id="calendarBody">
+              </tbody>
+            </table>
+            <div id="loadingIndicator">
+               <div class="spinner-border spinner-border-sm text-primary" role="status">
+                 <span class="visually-hidden">Loading...</span>
+               </div>
+               カレンダーを読み込み中...
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">選択された日時:</label>
+            <div id="selectedDateTime" class="alert alert-secondary p-2">日時を選択してください</div>
+            <input type="hidden" id="selectedDate" name="date">
+            <input type="hidden" id="selectedTime" name="time">
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100" id="submitBtn" disabled>予約を確定する</button>
+        </form>
+        <div id="result" class="mt-3"></div>
+      </div>
+
+      <div class="tab-pane fade" id="list" role="tabpanel" aria-labelledby="list-tab">
+        <h4>予約確認・キャンセル</h4>
+        <div id="reservationsList" class="reservations-list">
+          <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p>予約情報を読み込み中...</p>
+          </div>
+        </div>
+         <div id="cancelResult" class="mt-3"></div>
+      </div>
+
+    </div>
+  </div>
+  
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // --- クライアントサイドJavaScript ---
+    // グローバル変数
+    let currentWeekStart = null; // 表示中の週の開始日(Dateオブジェクト)
+    
+    // GASから渡されるテンプレート変数を使って初期化
+    const startDate = new Date('<?= startDate ?>'); // 予約可能開始日
+    const endDate = new Date('<?= endDate ?>');     // 予約可能終了日
+    const userId = document.getElementById('userId').value; // ユーザーID
+    
+    // GASから渡されるJSON文字列をパースしてオブジェクトに変換
+    const menuPlans = JSON.parse('<?= menuPlansJson ?>');
+    const staffMembers = JSON.parse('<?= staffMembersJson ?>');
+    const businessHours = JSON.parse('<?= businessHoursJson ?>');
+    const closedDays = JSON.parse('<?= closedDaysJson ?>');
+    const minDaysAhead = <?= minDaysAhead ?>;
+    const daysAhead = <?= daysAhead ?>;
+
+    /**
+     * DOM読み込み完了時の初期化処理
+     */
+    document.addEventListener('DOMContentLoaded', function() {
+      // 週の開始日を初期化 (予約可能開始日を含む週の日曜日)
+      currentWeekStart = getStartOfWeek(startDate);
+
+      populateOptions(); // メニューとスタッフのプルダウンを生成
+      updateCalendar();  // カレンダーを初期表示
+      setupEventListeners(); // イベントリスナーを設定
+    });
+
+    /**
+     * メニューとスタッフのプルダウン選択肢を生成する
+     */
+    function populateOptions() {
+      const menuSelect = document.getElementById('menu');
+      const staffSelect = document.getElementById('staff');
+
+      // メニュープランを追加
+      menuPlans.forEach(plan => {
+        const option = document.createElement('option');
+        option.value = plan.id;
+        option.textContent = `${plan.name} (${plan.price}円)`;
+        menuSelect.appendChild(option);
+      });
+
+      // スタッフメンバーを追加
+      staffMembers.forEach(staff => {
+        const option = document.createElement('option');
+        option.value = staff.id;
+        option.textContent = staff.name;
+        staffSelect.appendChild(option);
+      });
+    }
+
+    /**
+     * イベントリスナーを設定する
+     */
+    function setupEventListeners() {
+      // タブ切り替え時に予約一覧を読み込む
+      document.getElementById('list-tab').addEventListener('click', loadReservations);
+
+      // 週移動ボタンのクリックイベント
+      document.getElementById('prevWeek').addEventListener('click', () => navigateWeek(-7));
+      document.getElementById('nextWeek').addEventListener('click', () => navigateWeek(7));
+
+      // 予約フォームの送信イベント
+      document.getElementById('reservationForm').addEventListener('submit', handleFormSubmit);
+    }
+
+    /**
+     * 表示する週を移動する
+     * @param {number} days - 移動する日数 (-7で前の週, 7で次の週)
+     */
+    function navigateWeek(days) {
+      const newWeekStart = new Date(currentWeekStart);
+      newWeekStart.setDate(newWeekStart.getDate() + days);
+
+      // 予約可能範囲外への移動を制限
+      // 前の週へ: 新しい週の開始日が、予約可能開始日が含まれる週の開始日より前なら移動しない
+      if (days < 0 && newWeekStart < getStartOfWeek(startDate)) return;
+      // 次の週へ: 新しい週の開始日が、予約可能終了日が含まれる週の開始日より後なら移動しない
+      if (days > 0 && newWeekStart > getStartOfWeek(endDate)) return;
+
+      currentWeekStart = newWeekStart; // 現在の週を更新
+      updateCalendar(); // カレンダーを再描画
+    }
+
+    /**
+     * カレンダー表示を更新する (サーバーから空き状況を取得)
+     */
+    function updateCalendar() {
+      showLoading(true); // ローディング表示開始
+      updateWeekNavigation(); // 週ナビゲーションボタンの状態を更新
+
+      // サーバーサイド(GAS)のgetWeeklyAvailability関数を呼び出す
+      google.script.run
+        .withSuccessHandler(handleAvailabilitySuccess) // 成功時のコールバック
+        .withFailureHandler(handleAvailabilityFailure) // 失敗時のコールバック
+        .getWeeklyAvailability(formatDate(currentWeekStart)); // 週の開始日をYYYY-MM-DD 形式で渡す
+    }
+
+    /**
+     * 空き状況取得成功時のコールバック関数
+     * @param {Array<object>} weekData - サーバーから返された週の空き状況データ
+     */
+    function handleAvailabilitySuccess(weekData) {
+       console.log('予約状況データ取得成功:', weekData);
+       // データ形式の基本的なチェック
+       if (!weekData || !Array.isArray(weekData)) {
+         console.error('サーバーから受信したデータ形式が無効です:', weekData);
+         handleAvailabilityFailure('無効なデータ形式'); // エラー処理へ
+         return;
+       }
+       renderCalendar(weekData); // カレンダーを描画
+       showLoading(false); // ローディング表示終了
+    }
+
+    /**
+     * 空き状況取得失敗時のコールバック関数
+     * @param {Error|string} error - エラーオブジェクトまたはエラーメッセージ
+     */
+    function handleAvailabilityFailure(error) {
+      console.error('予約状況データの取得に失敗しました:', error);
+      // カレンダー表示部分にエラーメッセージを表示
+      document.getElementById('calendarBody').innerHTML =
+        `<tr><td colspan="8" class="text-center text-danger">カレンダー情報の取得に失敗しました。時間をおいて再度お試しください。</td></tr>`;
+      showLoading(false); // ローディング表示終了
+      // フォーム下部にもエラーメッセージを表示
+       displayMessage('result', 'カレンダー情報の取得に失敗しました。ページを再読み込みするか、時間をおいて再度お試しください。', 'danger');
+    }
+
+    /**
+     * 受け取ったデータをもとにカレンダーを描画する
+     * @param {Array<object>} weekData - 週の空き状況データ
+     */
+    function renderCalendar(weekData) {
+      updateCalendarHeader(); // ヘッダー（日付と曜日）を更新
+      const calendarBody = document.getElementById('calendarBody');
+      calendarBody.innerHTML = ''; // 現在のカレンダー内容をクリア
+
+      // 営業時間の定数
+      const businessStartHour = businessHours.START;  
+      const businessEndHour = businessHours.END;
+      const timeInterval = businessHours.TIME_INTERVAL;
+
+      for (let h = businessStartHour; h < businessEndHour; h++) {
+        for (let m = 0; m < 60; m += timeInterval) {
+          const timeString = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+          // 各時間帯の行を作成して追加
+          const row = createTimeSlotRow(timeString, weekData);
+          calendarBody.appendChild(row);
+        }
+      }
+    }
+
+    /**
+     * カレンダーのヘッダー（日付と曜日）を更新する
+     */
+    function updateCalendarHeader() {
+      const daysRow = document.getElementById('daysRow');
+      daysRow.innerHTML = '<th class="time-header">時間</th>'; // 時間列のヘッダー
+
+      const daysJP = ['日', '月', '火', '水', '木', '金', '土']; // 曜日の日本語表記
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(currentWeekStart);
+        date.setDate(date.getDate() + i); // 週の開始日からi日後の日付
+        const dayOfWeek = date.getDay(); // 曜日番号 (0=日, 6=土)
+        const isSunday = dayOfWeek === 0;
+        const isSaturday = dayOfWeek === 6;
+
+        const th = document.createElement('th');
+        // 日曜日と土曜日でクラスを付与して色付け
+        th.className = `day-header ${isSunday ? 'sunday' : ''} ${isSaturday ? 'saturday' : ''}`;
+        th.innerHTML = `${formatDateMMDD(date)}<br>(${daysJP[dayOfWeek]})`; // MM/DD (曜) 形式で表示
+        daysRow.appendChild(th);
+      }
+    }
+
+    /**
+     * 特定の時間帯のカレンダー行（全曜日分）を作成する
+     * @param {string} timeString - 時間 (HH:MM形式)
+     * @param {Array<object>} weekData - 週の空き状況データ
+     * @return {HTMLTableRowElement} - 作成されたテーブル行要素
+     */
+    function createTimeSlotRow(timeString, weekData) {
+      const row = document.createElement('tr');
+
+      // 時間セルを作成
+      const timeCell = document.createElement('td');
+      timeCell.className = 'time-header';
+      timeCell.textContent = timeString;
+      row.appendChild(timeCell);
+
+      // 各曜日のセルを作成 (7日分)
+      for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+        const cell = document.createElement('td');
+        const dayData = weekData[dayIndex]; // その曜日のデータ
+
+        if (!dayData) {
+           // データが存在しない場合（エラーケース）
+           cell.innerHTML = '-';
+           cell.classList.add('unavailable'); // 予約不可として表示
+        } else if (dayData.isHoliday) {
+          // 定休日の場合
+          cell.classList.add('holiday-cell'); // 定休日用のスタイル
+          cell.innerHTML = '<span class="holiday-text">-</span>'; // シンプルにハイフン表示
+        } else {
+          // 営業日の場合、時間帯データを検索
+          const hourData = dayData.hours ? dayData.hours.find(h => h.time === timeString) : null;
+          const slotDiv = document.createElement('div'); // 時間枠表示用のdiv
+          slotDiv.classList.add('time-slot'); // 基本スタイル
+
+          if (hourData && hourData.available > 0) {
+            // 予約可能な場合
+            slotDiv.classList.add('available'); // 予約可能スタイル
+            slotDiv.textContent = '◯'; // 記号で表示
+            slotDiv.dataset.date = dayData.date; // 日付データを保持 (YYYY-MM-DD)
+            slotDiv.dataset.time = timeString;   // 時間データを保持 (HH:MM)
+            // クリックイベントリスナーを設定
+            slotDiv.addEventListener('click', () => selectTimeSlot(slotDiv));
+          } else {
+            // 予約不可の場合
+            slotDiv.classList.add('unavailable'); // 予約不可スタイル
+            slotDiv.textContent = '×'; // 記号で表示
+          }
+           cell.appendChild(slotDiv); // セルに時間枠divを追加
+        }
+        row.appendChild(cell); // 行にセルを追加
+      }
+      return row;
+    }
+
+    /**
+     * タイムスロットがクリックされたときの処理
+     * @param {HTMLDivElement} element - クリックされた時間枠のdiv要素
+     */
+    function selectTimeSlot(element) {
+      // 他の選択済み要素があれば選択解除
+      const previouslySelected = document.querySelector('.time-slot.selected');
+      if (previouslySelected) {
+        previouslySelected.classList.remove('selected');
+      }
+
+      // クリックされた要素を選択状態にする
+      element.classList.add('selected');
+
+      // 選択された日時をフォームの隠しフィールドに設定
+      const date = element.dataset.date;
+      const time = element.dataset.time;
+      document.getElementById('selectedDate').value = date;
+      document.getElementById('selectedTime').value = time;
+
+      // 選択された日時を表示エリアにフォーマットして表示
+      const displayDate = formatDateWithDayJP(new Date(date + 'T' + time + ':00')); // YYYY年M月D日(曜) 形式
+      document.getElementById('selectedDateTime').textContent = `${displayDate} ${time}`;
+      // 表示エリアのスタイルを更新
+      document.getElementById('selectedDateTime').classList.remove('alert-secondary');
+      document.getElementById('selectedDateTime').classList.add('alert-info');
+
+      // 予約確定ボタンを有効化
+      document.getElementById('submitBtn').disabled = false;
+    }
+
+    /**
+     * 予約フォーム送信時の処理
+     * @param {Event} e - 送信イベント
+     */
+    function handleFormSubmit(e) {
+      e.preventDefault(); // フォームの通常の送信動作をキャンセル
+
+      const submitBtn = document.getElementById('submitBtn');
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = ''; // 前回の結果メッセージをクリア
+
+      // --- 入力チェック ---
+      if (!document.getElementById('menu').value) {
+         displayMessage('result', 'メニューを選択してください。', 'warning');
+         return;
+      }
+      if (!document.getElementById('staff').value) {
+         displayMessage('result', 'スタッフを選択してください。', 'warning');
+         return;
+      }
+      if (!document.getElementById('selectedDate').value || !document.getElementById('selectedTime').value) {
+        displayMessage('result', '予約日時を選択してください。', 'warning');
+        return;
+      }
+      // --- 入力チェックここまで ---
+
+      // 送信ボタンを無効化し、スピナーを表示
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 処理中...`;
+
+      // フォームデータをオブジェクトとして収集
+      const formData = {
+        userId: userId,
+        menu: document.getElementById('menu').value,
+        staff: document.getElementById('staff').value,
+        date: document.getElementById('selectedDate').value,
+        time: document.getElementById('selectedTime').value
+      };
+
+      console.log('予約データ送信:', formData);
+
+      // サーバーサイド(GAS)のcreateReservation関数を呼び出す
+      google.script.run
+        .withSuccessHandler(handleReservationSuccess) // 成功時コールバック
+        .withFailureHandler(handleReservationFailure) // 失敗時コールバック
+        .createReservation(formData); // フォームデータを渡す
+    }
+
+    /**
+     * 予約作成成功時のコールバック関数
+     * @param {object} result - サーバーから返された結果オブジェクト { success: boolean, message: string, ... }
+     */
+    function handleReservationSuccess(result) {
+      console.log('予約結果:', result);
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.innerHTML = '予約を確定する'; // ボタンのテキストを元に戻す
+
+      if (result.success) {
+        // 成功メッセージを表示
+        displayMessage('result', result.message, 'success');
+        // フォームの内容をリセット
+        document.getElementById('reservationForm').reset();
+        // 選択日時表示をリセット
+        document.getElementById('selectedDateTime').textContent = '日時を選択してください';
+        document.getElementById('selectedDateTime').classList.remove('alert-info');
+        document.getElementById('selectedDateTime').classList.add('alert-secondary');
+         // カレンダーの選択状態を解除
+         const previouslySelected = document.querySelector('.time-slot.selected');
+         if (previouslySelected) {
+           previouslySelected.classList.remove('selected');
+         }
+        // 予約確定ボタンを再度無効化
+        submitBtn.disabled = true;
+        // カレンダーを更新して最新の空き状況を反映
+        updateCalendar();
+      } else {
+        // 失敗メッセージを表示 (例: 予約上限、競合など)
+        displayMessage('result', result.message, 'danger');
+        submitBtn.disabled = false; // 失敗時はボタンを再度有効化
+      }
+    }
+
+    /**
+     * 予約作成失敗時のコールバック関数
+     * @param {Error|string} error - エラーオブジェクトまたはメッセージ
+     */
+    function handleReservationFailure(error) {
+      console.error('予約失敗:', error);
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.disabled = false; // ボタンを再度有効化
+      submitBtn.innerHTML = '予約を確定する';
+      // エラーメッセージを表示
+      displayMessage('result', '予約処理中にエラーが発生しました。時間をおいて再度お試しください。', 'danger');
+    }
+
+    /**
+     * 予約一覧タブがクリックされたときに予約情報を読み込んで表示する
+     */
+    function loadReservations() {
+      const listDiv = document.getElementById('reservationsList');
+      const cancelResultDiv = document.getElementById('cancelResult');
+      cancelResultDiv.innerHTML = ''; // 前回のキャンセル結果メッセージをクリア
+      // ローディング表示
+      listDiv.innerHTML = `
+        <div class="text-center">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p>予約情報を読み込み中...</p>
+        </div>`;
+
+      // サーバーサイド(GAS)のgetUserReservations関数を呼び出す
+      google.script.run
+        .withSuccessHandler(renderReservations) // 成功時コールバック
+        .withFailureHandler(error => { // 失敗時コールバック
+          console.error('予約一覧の取得に失敗しました:', error);
+          listDiv.innerHTML = `<div class="alert alert-danger">予約情報の読み込みに失敗しました。</div>`;
+        })
+        .getUserReservations(userId); // ユーザーIDを渡す
+    }
+
+    /**
+     * 取得した予約情報をもとに一覧を描画する
+     * @param {Array<object>} reservations - 予約情報の配列
+     */
+    function renderReservations(reservations) {
+      const listDiv = document.getElementById('reservationsList');
+      listDiv.innerHTML = ''; // 現在の内容をクリア
+
+      if (!reservations || reservations.length === 0) {
+        // 予約がない場合のメッセージを表示
+        listDiv.innerHTML = '<div class="alert alert-info">現在、有効な予約はありません。</div>';
+        return;
+      }
+
+      // 予約リストを表示するためのdiv要素を作成
+      const listGroup = document.createElement('div');
+      listGroup.className = 'list-group';
+
+      // 各予約情報をリストアイテムとして追加
+      reservations.forEach(res => {
+        // メニュー名とスタッフ名をIDから検索 (見つからない場合はIDをそのまま表示)
+        const menu = menuPlans.find(m => m.id === res.menu) || { name: res.menu };
+        const staff = staffMembers.find(s => s.id === res.staff) || { name: res.staff };
+
+        const item = document.createElement('div');
+        item.className = 'list-group-item'; // Bootstrapのリストグループアイテムスタイル
+        // 予約情報を表示し、キャンセルボタンを追加
+        item.innerHTML = `
+          <div class="d-flex w-100 justify-content-between">
+            <h5 class="mb-1">${res.date} ${res.time}</h5>
+            <small>予約ID: ${res.id}</small>
+          </div>
+          <p class="mb-1">メニュー: ${menu.name}</p>
+          <p class="mb-1">担当: ${staff.name}</p>
+          <button class="btn btn-sm btn-outline-danger mt-2 cancel-btn" data-reservation-id="${res.id}">
+             <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+             キャンセルする
+          </button>
+        `;
+        listGroup.appendChild(item);
+      });
+
+      listDiv.appendChild(listGroup); // 生成したリストをdivに追加
+
+      // 各キャンセルボタンにクリックイベントリスナーを設定
+      listDiv.querySelectorAll('.cancel-btn').forEach(button => {
+        button.addEventListener('click', handleCancelClick);
+      });
+    }
+
+     /**
+      * キャンセルボタンがクリックされたときの処理
+      * @param {Event} event - クリックイベント
+      */
+    function handleCancelClick(event) {
+        const button = event.currentTarget; // クリックされたボタン
+        const reservationId = button.dataset.reservationId; // data属性から予約IDを取得
+        const cancelResultDiv = document.getElementById('cancelResult');
+        cancelResultDiv.innerHTML = ''; // 前回のキャンセル結果メッセージをクリア
+
+        // キャンセル確認ダイアログを表示
+        if (!confirm(`予約ID: ${reservationId}\nこの予約を本当にキャンセルしますか？`)) {
+            return; // 「いいえ」が押されたら何もしない
+        }
+
+        // ボタンを「処理中」表示に変更
+        button.disabled = true;
+        const spinner = button.querySelector('.spinner-border');
+        spinner.classList.remove('d-none'); // スピナーを表示
+        // ボタンテキストを変更
+         const textNode = button.childNodes[button.childNodes.length -1];
+         if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+             textNode.textContent = ' キャンセル処理中...';
+         } else {
+             button.insertAdjacentText('beforeend', ' キャンセル処理中...');
+         }
+
+
+        console.log(`キャンセル実行: ID=${reservationId}, User=${userId}`);
+        // サーバーサイド(GAS)のcancelReservation関数を呼び出す
+        google.script.run
+            .withSuccessHandler(result => handleCancelSuccess(result, button)) // 成功時コールバック
+            .withFailureHandler(error => handleCancelFailure(error, button))   // 失敗時コールバック
+            .cancelReservation(reservationId, userId); // 予約IDとユーザーIDを渡す
+    }
+
+    /**
+     * 予約キャンセル成功時のコールバック関数
+     * @param {object} result - サーバーからの結果 { success: boolean, message: string }
+     * @param {HTMLButtonElement} button - クリックされたキャンセルボタン
+     */
+    function handleCancelSuccess(result, button) {
+        console.log('キャンセル結果:', result);
+
+        // キャンセル結果メッセージを表示
+        if (result.success) {
+            displayMessage('cancelResult', result.message, 'success');
+            // キャンセルされた項目をリストから削除または非表示にする
+            button.closest('.list-group-item').style.opacity = '0.5'; // 半透明にする
+            button.remove(); // ボタン自体を削除
+
+            // 新規予約タブのカレンダーは更新する
+            updateCalendar();
+        } else {
+            // 失敗した場合（例: すでにキャンセル済み、権限なしなど）
+            displayMessage('cancelResult', result.message, 'danger');
+            // ボタンを有効に戻す
+            button.disabled = false;
+            const spinner = button.querySelector('.spinner-border');
+            spinner.classList.add('d-none');
+            const textNode = button.childNodes[button.childNodes.length -1];
+            if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+                textNode.textContent = ' キャンセルする';
+            }
+        }
+    }
+
+    /**
+     * 予約キャンセル失敗時のコールバック関数
+     * @param {Error|string} error - エラーオブジェクトまたはメッセージ
+     * @param {HTMLButtonElement} button - クリックされたキャンセルボタン
+     */
+    function handleCancelFailure(error, button) {
+        console.error('キャンセルエラー:', error);
+        // ボタンを有効に戻し、スピナーを非表示、テキストを元に戻す
+        button.disabled = false;
+        const spinner = button.querySelector('.spinner-border');
+        spinner.classList.add('d-none');
+         const textNode = button.childNodes[button.childNodes.length -1];
+         if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+             textNode.textContent = ' キャンセルする';
+         }
+        // エラーメッセージを表示
+        displayMessage('cancelResult', 'キャンセル処理中にエラーが発生しました。時間をおいて再度お試しください。', 'danger');
+    }
+
+
+    // --- ユーティリティ関数 ---
+
+    /**
+     * 指定された日付が含まれる週の開始日（日曜日）を取得する
+     * @param {Date} d - 日付オブジェクト
+     * @return {Date} - 週の開始日（日曜日）のDateオブジェクト
+     */
+    function getStartOfWeek(d) {
+      const date = new Date(d);
+      const day = date.getDay(); // 0 (日曜日) から 6 (土曜日)
+      const diff = date.getDate() - day; // 日曜日からの差分
+      return new Date(date.setDate(diff)); // 週の開始日を設定
+    }
+
+    /**
+     * DateオブジェクトをYYYY-MM-DD 形式の文字列にフォーマットする
+     * @param {Date} date - 日付オブジェクト
+     * @return {string} - フォーマットされた文字列 (無効な日付の場合は空文字)
+     */
+    function formatDate(date) {
+      // Dateオブジェクトでない場合や無効な日付の場合は空文字を返す
+      if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0'); // 月は0から始まるため+1
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    /**
+     * Dateオブジェクトを MM/DD 形式の文字列にフォーマットする
+     * @param {Date} date - 日付オブジェクト
+     * @return {string} - フォーマットされた文字列 (無効な日付の場合は空文字)
+     */
+    function formatDateMMDD(date) {
+      if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+      const month = String(date.getMonth() + 1);
+      const day = String(date.getDate());
+      return `${month}/${day}`;
+    }
+
+     /**
+      * DateオブジェクトをYYYY年M月D日(曜) 形式の日本語文字列にフォーマットする
+      * @param {Date} date - 日付オブジェクト
+      * @return {string} - フォーマットされた文字列 (無効な日付の場合は空文字)
+      */
+    function formatDateWithDayJP(date) {
+      if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+      const day = date.getDate();
+      const days = ['日', '月', '火', '水', '木', '金', '土'];
+      const dayName = days[date.getDay()];
+      return `${year}年${month}月${day}日(${dayName})`;
+    }
+
+
+    /**
+     * 週ナビゲーションボタン（前の週、次の週）の有効/無効状態と週表示を更新する
+     */
+    function updateWeekNavigation() {
+      const prevWeekBtn = document.getElementById('prevWeek');
+      const nextWeekBtn = document.getElementById('nextWeek');
+      const currentWeekDiv = document.getElementById('currentWeek');
+
+      // 表示中の週の終了日を計算
+      const weekEndDate = new Date(currentWeekStart);
+      weekEndDate.setDate(weekEndDate.getDate() + 6);
+
+      // 週表示エリア (MM/DD 〜 MM/DD) を更新
+      currentWeekDiv.textContent = `${formatDateMMDD(currentWeekStart)} 〜 ${formatDateMMDD(weekEndDate)}`;
+
+      // 「前の週」ボタン: 予約可能開始日より前の週なら無効化
+      prevWeekBtn.disabled = currentWeekStart <= getStartOfWeek(startDate);
+
+      // 「次の週」ボタン: 予約可能終了日より後の週なら無効化
+      nextWeekBtn.disabled = currentWeekStart >= getStartOfWeek(endDate);
+    }
+
+     /**
+      * ローディングインジケーターの表示/非表示を切り替える
+      * @param {boolean} isLoading - trueなら表示、falseなら非表示
+      */
+    function showLoading(isLoading) {
+      const indicator = document.getElementById('loadingIndicator');
+      const calendarBody = document.getElementById('calendarBody');
+      if (!indicator || !calendarBody) return; // 要素がない場合は何もしない
+
+      if (isLoading) {
+        indicator.style.display = 'block'; // インジケーター表示
+        calendarBody.innerHTML = ''; // ローディング中はカレンダー内容をクリア
+      } else {
+        indicator.style.display = 'none'; // インジケーター非表示
+      }
+    }
+
+    /**
+     * 指定されたIDの要素にメッセージを表示する（Bootstrap Alertを使用）
+     * @param {string} elementId - メッセージを表示する要素のID
+     * @param {string} message - 表示するメッセージ
+     * @param {string} [type='info'] - Alertのタイプ ('success', 'danger', 'warning', 'info')
+     */
+    function displayMessage(elementId, message, type = 'info') {
+        const element = document.getElementById(elementId);
+        if (element) {
+            // BootstrapのAlertコンポーネントのHTMLを生成
+            element.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                                   ${message}
+                                   <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                 </div>`;
+        }
+    }
+  </script>
+</body>
+</html>
