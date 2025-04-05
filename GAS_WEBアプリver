@@ -31,17 +31,17 @@ const SHEET_NAMES = {
 const BUSINESS_HOURS = {
   START: 10, // 営業開始時間 (10:00)
   END: 20,   // 営業終了時間 (20:00) - この時間ちょうどは予約不可
-  DURATION: 60, // 予約のデフォルト所要時間（分）
-  MAX_SLOTS: 3, // 同時刻の最大予約数
-  MAX_USER_RESERVATIONS: 3, // 1ユーザーあたりの最大予約数（未来の予約）
+  DEFAULT_DURATION: 60, // 予約のデフォルト所要時間（分）- メニューに指定がない場合に使用
+  MAX_SLOTS: 1, // 同時刻の最大予約数
+  MAX_USER_RESERVATIONS: 10, // 1ユーザーあたりの最大予約数（未来の予約）
   TIME_INTERVAL: 30 // 予約可能な時間間隔（分）
 };
 
-// メニュー情報
+// メニュー情報 - 各メニューに所要時間（分）を追加
 const MENU_PLANS = [
-  { id: 'A', name: 'Aプラン（カット）', price: 3300 },
-  { id: 'B', name: 'Bプラン（パーマ）', price: 5500 },
-  { id: 'C', name: 'Cプラン（カラー）', price: 4400 }
+  { id: 'A', name: 'カット', price: 3300, duration: 45 },
+  { id: 'B', name: 'パーマ', price: 5500, duration: 90 },
+  { id: 'C', name: 'カラー', price: 4400, duration: 60 }
 ];
 
 // スタッフ情報
@@ -246,19 +246,69 @@ function handleFollow(event) {
 // LINEメッセージ送信関数
 // ----------------------------------------
 
-/**
- * 予約フォームのURLをLINEで送信する
- * @param {string} userId - 送信先LINEユーザーID
- */
 function sendReservationUrl(userId) {
   try {
     const webAppUrl = ScriptApp.getService().getUrl();
     // ユーザーIDをパラメータとして付与
     const reservationUrl = `${webAppUrl}?userId=${encodeURIComponent(userId)}`;
 
-    sendLineMessage(userId,
-      '下記のURLからご予約ください。\n\n' + reservationUrl
-    );
+    // Flex Message形式で予約フォームリンクを作成
+    const flexMessage = {
+      type: "flex",
+      altText: "予約フォームのURLです",
+      contents: {
+        type: "bubble",
+        body: {
+          type: "box",
+          layout: "vertical",
+          contents: [
+            {
+              type: "text",
+              text: "ご予約はこちらから",
+              weight: "bold",
+              size: "md"
+            }
+          ]
+        },
+        footer: {
+          type: "box",
+          layout: "vertical",
+          spacing: "sm",
+          contents: [
+            {
+              type: "button",
+              style: "primary",
+              action: {
+                type: "uri",
+                label: "予約フォームを開く",
+                uri: reservationUrl
+              }
+            }
+          ]
+        }
+      }
+    };
+
+    // Flex Messageを送信
+    const url = 'https://api.line.me/v2/bot/message/push';
+    const headers = {
+      'Content-Type': 'application/json; charset=UTF-8',
+      'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN,
+    };
+    const payload = {
+      to: userId,
+      messages: [flexMessage]
+    };
+    const options = {
+      method: 'post',
+      headers: headers,
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    console.log(`予約フォームURL Flex Message送信: UserID=${userId}, ResponseCode=${response.getResponseCode()}`);
+    
   } catch (error) {
     console.error(`sendReservationUrlでエラー UserID=${userId}:`, error, error.stack);
     sendLineMessage(userId, '予約ページのURL取得中にエラーが発生しました。');
@@ -607,7 +657,7 @@ function getWeeklyAvailability(startDateStr) {
 
 /**
  * 新しい予約を作成する (クライアントサイドJSから呼び出される)
- * @param {object} reservationData - 予約情報 (userId, menu, staff, date, time)
+ * @param {object} reservationData - 予約情報 (userId, menus[], menuNames[], totalPrice, staff, date, time)
  * @return {object} - { success: boolean, message: string, reservationInfo?: object }
  */
 function createReservation(reservationData) {
@@ -617,10 +667,19 @@ function createReservation(reservationData) {
     lock.waitLock(15000); // 最大15秒待機
 
     // --- バリデーション ---
-    if (!reservationData || !reservationData.userId || !reservationData.menu || !reservationData.staff || !reservationData.date || !reservationData.time) {
+    if (!reservationData || !reservationData.userId || !reservationData.staff || !reservationData.date || !reservationData.time) {
       return { success: false, message: '予約情報が不足しています。' };
     }
 
+    // メニュー選択のチェック（配列かどうかで単一メニューか複数メニューかを判断）
+    if ((!reservationData.menus || !Array.isArray(reservationData.menus) || reservationData.menus.length === 0) && 
+        !reservationData.menu) { // 互換性のため古いmenuプロパティもチェック
+      return { success: false, message: 'メニューが選択されていません。' };
+    }
+
+    // 配列でない場合（旧形式）は配列に変換
+    const menuIds = Array.isArray(reservationData.menus) ? reservationData.menus : [reservationData.menu];
+    
     // ユーザー情報取得
     const userInfo = getUserInfo(reservationData.userId);
     if (!userInfo) {
@@ -654,7 +713,8 @@ function createReservation(reservationData) {
     if (reservationDateTime < minBookableDate || reservationDateTime > maxBookableDate) {
       return { success: false, message: `予約可能期間（${MIN_DAYS_AHEAD}日後～${DAYS_AHEAD}日後）外です。` };
     }
-     // 過去日時チェック
+    
+    // 過去日時チェック
     if (reservationDateTime < now) {
         return { success: false, message: '過去の日時を予約することはできません。' };
     }
@@ -700,33 +760,86 @@ function createReservation(reservationData) {
     // --- 予約処理実行 ---
     // 予約ID生成 (よりユニークにするためランダム文字列追加)
     const reservationId = Utilities.formatDate(now, 'GMT+9', 'yyyyMMddHHmmss') + Math.random().toString(36).substring(2, 8);
-    const endTime = new Date(reservationDateTime.getTime() + BUSINESS_HOURS.DURATION * 60 * 1000);
+    
+    // メニュー情報の準備
+    let menuItemsText = '';
+    let totalPrice = 0;
+    let maxDuration = 0; // 選択されたメニューの中で最長の所要時間を取得
+    
+    // メニュー名配列がある場合はそれを利用、なければIDから逆引き
+    const menuNames = reservationData.menuNames || [];
+    
+    // メニューの詳細情報を取得
+    const menuDetails = menuIds.map((menuId, index) => {
+      const menuItem = MENU_PLANS.find(m => m.id === menuId) || { 
+        id: menuId, 
+        name: menuId, 
+        price: 0,
+        duration: BUSINESS_HOURS.DEFAULT_DURATION // デフォルト所要時間
+      };
+      
+      totalPrice += menuItem.price;
+      
+      // この予約で最長の所要時間を記録
+      if (menuItem.duration > maxDuration) {
+        maxDuration = menuItem.duration;
+      }
+      
+      // 表示用のメニュー名（優先順位：クライアント側から送信された名前 > 定数配列の名前 > ID）
+      const displayName = (menuNames && menuNames[index]) || menuItem.name || menuId;
+      
+      return {
+        id: menuId,
+        name: displayName,
+        price: menuItem.price,
+        duration: menuItem.duration
+      };
+    });
+    
+    // もし最長所要時間が見つからない場合はデフォルト値を使用
+    if (maxDuration <= 0) {
+      maxDuration = BUSINESS_HOURS.DEFAULT_DURATION;
+    }
+    
+    // 予約終了時間を計算 (最長のメニュー所要時間を使用)
+    const endTime = new Date(reservationDateTime.getTime() + maxDuration * 60 * 1000);
     const creationTime = now;
+    
+    // メニュー名のカンマ区切りテキスト
+    menuItemsText = menuDetails.map(item => item.name).join(', ');
+    
+    // 合計金額の確認（クライアント側の計算と一致するか）
+    if (reservationData.totalPrice && reservationData.totalPrice !== totalPrice) {
+      console.warn(`金額不一致: クライアント=${reservationData.totalPrice}, サーバー計算=${totalPrice}`);
+      // ここでは警告だけにとどめ、サーバー側で計算した金額を正とする
+    }
 
-    // スプレッドシートに追記
+    // スプレッドシートに追記 - メニュー情報修正
     reservationsSheet.appendRow([
       reservationId,          // 予約ID [0]
       reservationData.userId, // UID [1]
-      userInfo.name,          // 氏名 [2]
+      userInfo.name,          //氏名 [2]
       userInfo.phone,         // 電話番号 [3]
-      reservationData.menu,   // メニューID [4]
+      JSON.stringify(menuIds), // メニューIDのJSON配列 [4]
       reservationData.staff,  // スタッフID [5]
       reservationDateTime,    // 予約日時 [6]
-      endTime,                // 終了時間 [7]
+      endTime,                // 終了時間 (メニューの最長所要時間で計算) [7]
       creationTime,           // 予約作成日時 [8]
       false,                  // リマインド送信済み [9]
-      false                   // キャンセル [10]
+      false,                  // キャンセル [10]
+      totalPrice,             // 合計金額 [11]
+      menuItemsText,          // メニュー名テキスト [12]
+      maxDuration             // 使用した所要時間（分） [13]
     ]);
-    console.log(`スプレッドシートに予約追加: ID=${reservationId}`);
+    console.log(`スプレッドシートに予約追加: ID=${reservationId}, メニュー=[${menuItemsText}], 所要時間=${maxDuration}分, 金額=${totalPrice}円`);
 
     // Googleカレンダーに登録
     try {
       const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
       if (calendar) {
-        const menu = MENU_PLANS.find(m => m.id === reservationData.menu) || { name: reservationData.menu };
         const staff = STAFF_MEMBERS.find(s => s.id === reservationData.staff) || { name: reservationData.staff };
-        const eventTitle = `${userInfo.name}様 / ${menu.name} (${staff.name})`;
-        const eventDescription = `予約ID: ${reservationId}\nLINE UID: ${reservationData.userId}\n電話番号: ${userInfo.phone}\nメニュー: ${menu.name}\n担当: ${staff.name}`;
+        const eventTitle = `${userInfo.name}様 / ${menuItemsText} (${staff.name})`;
+        const eventDescription = `予約ID: ${reservationId}\nLINE UID: ${reservationData.userId}\n電話番号: ${userInfo.phone}\nメニュー: ${menuItemsText}\n担当: ${staff.name}\n所要時間: ${maxDuration}分\n金額: ${totalPrice}円`;
         calendar.createEvent(eventTitle, reservationDateTime, endTime, { description: eventDescription });
         console.log(`Googleカレンダーにイベント追加: ${eventTitle}`);
       } else {
@@ -739,24 +852,221 @@ function createReservation(reservationData) {
 
     // LINEで予約完了通知
     try {
-       const menu = MENU_PLANS.find(m => m.id === reservationData.menu) || { name: reservationData.menu };
-       const staff = STAFF_MEMBERS.find(s => s.id === reservationData.staff) || { name: reservationData.staff };
-       const message = `ご予約ありがとうございます。\n\n` +
-                       `日時: ${formatDate(reservationDateTime)} ${reservationData.time}\n` +
-                       `メニュー: ${menu.name}\n` +
-                       `担当: ${staff.name}\n\n` +
-                       `予約ID: ${reservationId}\n`+
-                       `前日に確認メッセージをお送りします。\n` +
-                       `ご来店をお待ちしております。`;
-       sendLineMessage(reservationData.userId, message);
+      const staff = STAFF_MEMBERS.find(s => s.id === reservationData.staff) || { name: reservationData.staff };
+      
+      // Flex Message形式で予約確定メッセージを作成
+      const flexMessage = {
+        type: "flex",
+        altText: "予約が確定しました",
+        contents: {
+          type: "bubble",
+          header: {
+            type: "box",
+            layout: "vertical",
+            contents: [
+              {
+                type: "text",
+                text: "予約確定のお知らせ",
+                weight: "bold",
+                size: "lg",
+                color: "#FFFFFF"
+              }
+            ],
+            backgroundColor: "#27ACB2"
+          },
+          hero: {
+            type: "image",
+            url: "https://chronicle-japan.jp/wp-content/uploads/2021/12/IMG_1705.jpg",
+            size: "full",
+            aspectRatio: "20:13",
+            aspectMode: "cover"
+          },
+          body: {
+            type: "box",
+            layout: "vertical",
+            contents: [
+              {
+                type: "text",
+                text: "ご予約ありがとうございます",
+                weight: "bold",
+                size: "xl",
+                wrap: true
+              },
+              {
+                type: "box",
+                layout: "vertical",
+                margin: "lg",
+                spacing: "sm",
+                contents: [
+                  {
+                    type: "box",
+                    layout: "baseline",
+                    spacing: "sm",
+                    contents: [
+                      {
+                        type: "text",
+                        text: "日時",
+                        color: "#aaaaaa",
+                        size: "sm",
+                        flex: 1
+                      },
+                      {
+                        type: "text",
+                        text: `${formatDate(reservationDateTime)} ${reservationData.time}`,
+                        wrap: true,
+                        color: "#666666",
+                        size: "sm",
+                        flex: 5,
+                        weight: "bold"
+                      }
+                    ]
+                  },
+                  {
+                    type: "box",
+                    layout: "baseline",
+                    spacing: "sm",
+                    contents: [
+                      {
+                        type: "text",
+                        text: "メニュー",
+                        color: "#aaaaaa",
+                        size: "sm",
+                        flex: 1
+                      },
+                      {
+                        type: "text",
+                        text: menuItemsText,
+                        wrap: true,
+                        color: "#666666",
+                        size: "sm",
+                        flex: 5
+                      }
+                    ]
+                  },
+                  {
+                    type: "box",
+                    layout: "baseline",
+                    spacing: "sm",
+                    contents: [
+                      {
+                        type: "text",
+                        text: "金額",
+                        color: "#aaaaaa",
+                        size: "sm",
+                        flex: 1
+                      },
+                      {
+                        type: "text",
+                        text: `${totalPrice.toLocaleString()}円`,
+                        wrap: true,
+                        color: "#666666",
+                        size: "sm",
+                        flex: 5,
+                        weight: "bold"
+                      }
+                    ]
+                  },
+                  {
+                    type: "box",
+                    layout: "baseline",
+                    spacing: "sm",
+                    contents: [
+                      {
+                        type: "text",
+                        text: "担当",
+                        color: "#aaaaaa",
+                        size: "sm",
+                        flex: 1
+                      },
+                      {
+                        type: "text",
+                        text: staff.name,
+                        wrap: true,
+                        color: "#666666",
+                        size: "sm",
+                        flex: 5
+                      }
+                    ]
+                  },
+                  {
+                    type: "box",
+                    layout: "baseline",
+                    spacing: "sm",
+                    contents: [
+                      {
+                        type: "text",
+                        text: "予約ID",
+                        color: "#aaaaaa",
+                        size: "sm",
+                        flex: 1
+                      },
+                      {
+                        type: "text",
+                        text: reservationId,
+                        wrap: true,
+                        color: "#666666",
+                        size: "sm",
+                        flex: 5
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          footer: {
+            type: "box",
+            layout: "vertical",
+            spacing: "sm",
+            contents: [
+              {
+                type: "text",
+                text: "前日に確認メッセージをお送りします。",
+                wrap: true,
+                size: "sm"
+              },
+              {
+                type: "text",
+                text: "ご来店をお待ちしております。",
+                wrap: true,
+                size: "sm"
+              }
+            ],
+            flex: 0
+          },
+          styles: {
+            footer: {
+              separator: true
+            }
+          }
+        }
+      };
+
+      // Flex Messageを送信するために、sendLineMessageの代わりに直接APIを呼び出す
+      const url = 'https://api.line.me/v2/bot/message/push';
+      const headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN,
+      };
+      const payload = {
+        to: reservationData.userId,
+        messages: [flexMessage]
+      };
+      const options = {
+        method: 'post',
+        headers: headers,
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      };
+
+      const response = UrlFetchApp.fetch(url, options);
+      console.log(`予約完了Flex Message送信: UserID=${reservationData.userId}, ResponseCode=${response.getResponseCode()}`);
     } catch (lineError) {
-       console.error(`予約完了LINE通知エラー (予約ID: ${reservationId}):`, lineError, lineError.stack);
-       // LINE通知失敗も予約自体は成功とする
+      console.error(`予約完了LINE通知エラー (予約ID: ${reservationId}):`, lineError, lineError.stack);
+      // LINE通知失敗も予約自体は成功とする
     }
 
-
     // 成功レスポンス
-    const menu = MENU_PLANS.find(m => m.id === reservationData.menu) || { name: reservationData.menu };
     const staff = STAFF_MEMBERS.find(s => s.id === reservationData.staff) || { name: reservationData.staff };
     return {
       success: true,
@@ -765,7 +1075,9 @@ function createReservation(reservationData) {
         id: reservationId,
         date: reservationData.date,
         time: reservationData.time,
-        menu: menu.name,
+        menuText: menuItemsText,
+        duration: maxDuration,
+        totalPrice: totalPrice,
         staff: staff.name
       }
     };
@@ -781,6 +1093,119 @@ function createReservation(reservationData) {
     } catch (lockError) {
       console.error('ロック解放エラー:', lockError);
     }
+  }
+}
+
+// 1. populateOptions 関数を修正して、所要時間情報をチェックボックスの属性に追加し、selectedMenus配列にも追加する
+
+/**
+ * メニューとスタッフのプルダウン選択肢を生成する
+ */
+function populateOptions() {
+  const menuOptionsContainer = document.getElementById('menuOptions');
+  const staffSelect = document.getElementById('staff');
+
+  // メニューオプションを追加 (チェックボックスとして)
+  menuPlans.forEach(plan => {
+    const menuItem = document.createElement('div');
+    menuItem.className = 'menu-item';
+    
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = `menu-${plan.id}`;
+    checkbox.className = 'menu-checkbox';
+    checkbox.value = plan.id;
+    checkbox.setAttribute('data-price', plan.price);
+    checkbox.setAttribute('data-duration', plan.duration); // 所要時間を属性として追加
+    
+    const label = document.createElement('label');
+    label.htmlFor = `menu-${plan.id}`;
+    label.textContent = plan.name;
+    
+    const details = document.createElement('span');
+    details.className = 'menu-details';
+    details.textContent = `${plan.price.toLocaleString()}円 (所要時間: ${plan.duration}分)`;
+    
+    menuItem.appendChild(checkbox);
+    menuItem.appendChild(label);
+    menuItem.appendChild(details);
+    menuOptionsContainer.appendChild(menuItem);
+    
+    // チェックボックスの変更イベントを設定
+    checkbox.addEventListener('change', function() {
+      if (this.checked) {
+        selectedMenus.push({
+          id: this.value,
+          name: plan.name,
+          price: plan.price,
+          duration: plan.duration // 所要時間を追加
+        });
+      } else {
+        selectedMenus = selectedMenus.filter(item => item.id !== this.value);
+      }
+      updateTotalPrice(); // 合計金額を更新
+      updateTotalDuration(); // 所要時間を更新
+      validateForm(); // フォームのバリデーション状態を更新
+    });
+  });
+
+  // スタッフメンバーを追加
+  staffMembers.forEach(staff => {
+    const option = document.createElement('option');
+    option.value = staff.id;
+    option.textContent = staff.name;
+    staffSelect.appendChild(option);
+  });
+}
+
+// 2. updateTotalDuration 関数を追加
+
+/**
+ * 選択メニューの中で最長の所要時間を計算して表示
+ */
+function updateTotalDuration() {
+  const totalDurationElement = document.getElementById('totalDuration');
+  if (!totalDurationElement) return; // 要素がなければ何もしない
+  
+  let maxDuration = 0;
+  
+  // 選択されたメニューの中で最長の所要時間を取得
+  selectedMenus.forEach(menu => {
+    if (menu.duration > maxDuration) {
+      maxDuration = menu.duration;
+    }
+  });
+  
+  // 所要時間を表示
+  if (maxDuration > 0) {
+    totalDurationElement.textContent = `${maxDuration}分`;
+    totalDurationElement.style.color = '#0d6efd';
+  } else {
+    totalDurationElement.textContent = '0分';
+    totalDurationElement.style.color = '#6c757d';
+  }
+}
+
+/**
+ * 合計金額を計算して表示
+ */
+function updateTotalPrice() {
+  const totalPriceElement = document.getElementById('totalPrice');
+  let total = 0;
+  
+  // 選択されたメニューの価格を合計
+  selectedMenus.forEach(menu => {
+    total += menu.price;
+  });
+  
+  // 合計金額を表示
+  totalPriceElement.textContent = `${total.toLocaleString()}円`;
+  
+  // 合計金額が0円の場合と金額がある場合でスタイルを変更
+  if (total === 0) {
+    totalPriceElement.style.color = '#6c757d';
+  } else {
+    totalPriceElement.style.color = '#0d6efd';
   }
 }
 
@@ -936,13 +1361,49 @@ function getUserReservations(userId) {
         const reservationDateTime = new Date(row[6]); // 予約日時(6)
         // 未来の予約のみを対象とする
         if (reservationDateTime >= now) {
+          // メニューID(4)の処理 - JSON文字列として保存されている場合とそのままの場合の両方に対応
+          let menuIds = [];
+          let menuNames = '';
+          
+          try {
+            // JSON文字列の場合（複数メニュー対応版）
+            if (row[4] && typeof row[4] === 'string' && row[4].startsWith('[')) {
+              menuIds = JSON.parse(row[4]);
+              
+              // メニュー名文字列がある場合（新フォーマット）
+              if (row[12]) {
+                menuNames = row[12];
+              } else {
+                // メニュー名がない場合はIDからメニュー名を取得
+                menuNames = menuIds.map(id => {
+                  const menu = MENU_PLANS.find(m => m.id === id);
+                  return menu ? menu.name : id;
+                }).join(', ');
+              }
+            } else {
+              // 従来の単一メニュー形式
+              menuIds = [row[4]];
+              const menu = MENU_PLANS.find(m => m.id === row[4]);
+              menuNames = menu ? menu.name : row[4];
+            }
+          } catch (e) {
+            console.warn(`メニューデータのパースエラー: ${e.message}, row=${i+1}`);
+            menuIds = [row[4]]; // エラー時は単一メニューとして扱う
+            menuNames = row[4];
+          }
+          
+          // 合計金額 - 新フォーマットでは11列目に保存
+          let totalPrice = row[11] || 0;
+          
+          // 新しい形式で予約情報を作成
           reservations.push({
             id: row[0], // 予約ID(0)
             date: formatDate(reservationDateTime), // YYYY-MM-DD
             time: `${String(reservationDateTime.getHours()).padStart(2, '0')}:${String(reservationDateTime.getMinutes()).padStart(2, '0')}`, // HH:MM
-            menu: row[4], // メニューID(4)
+            menus: menuIds, // メニューIDの配列
+            menuText: menuNames, // メニュー名（表示用）
             staff: row[5], // スタッフID(5)
-            // 必要であれば他の情報も追加
+            totalPrice: totalPrice // 合計金額
           });
         }
       }
@@ -1418,4 +1879,3 @@ function testCancelReservation() {
    const result = cancelReservation(testReservationId, testUserId);
    console.log('予約キャンセルテスト結果:', JSON.stringify(result, null, 2));
 }
-
