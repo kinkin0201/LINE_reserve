@@ -2,49 +2,314 @@
 <html>
 <head>
     <base target="_top">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <title>予約フォーム</title>
     <style>
       /* スタイル定義 */
-      body { padding: 15px; font-family: sans-serif; }
-      .form-container { max-width: 800px; margin: 0 auto; }
-      .calendar-container { margin-bottom: 20px; overflow-x: auto; }
+      body { 
+        padding: 60px; 
+        font-family: 'Hiragino Kaku Gothic ProN', 'メイリオ', sans-serif;
+        font-size: 28px;
+        line-height: 1.6;
+      }
+      
+      .form-container { 
+        max-width: 100%; 
+        margin: 0 auto; 
+        padding: 0;
+      }
+      
+      .calendar-container { 
+        margin-bottom: 20px; 
+        overflow-x: auto; 
+      }
+      
+      /* 画像ヘッダー */
+      .header-image-container {
+        width: 100%;
+        margin-bottom: 16px;
+        text-align: center;
+      }
+
+      .header-image {
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px 8px 0 0; /* 上部の角を丸くする */
+      }
+      
+      /* タブナビゲーションの調整 */
+      .nav-tabs .nav-link {
+        font-size: 28px;
+        padding: 12px 16px;
+      }
+      
+      /* フォーム要素の調整 */
+      .form-label {
+        font-size: 28px;
+        font-weight: bold;
+        margin-bottom: 8px;
+      }
+      
+      .form-select,
+      .form-control {
+        font-size: 28px;
+        padding: 12px;
+        height: auto;
+      }
+      
+      /* 予約ボタンのスタイル調整 */
+      #submitBtn {
+        background-color: #00B900;
+        padding: 16px;
+        font-size: 40px;
+        font-weight: bold;
+        margin-top: 0px;
+        margin-bottom: 20px;
+      }
+      
+      /* 時間枠のスタイル調整 */
       .time-slot {
-        cursor: pointer; padding: 8px; border-radius: 4px; text-align: center;
-        transition: background-color 0.2s; border: 1px solid #ddd; margin: 2px;
-        min-width: 80px; /* 幅を確保 */
+        cursor: pointer; 
+        padding: 10px; 
+        border-radius: 6px; 
+        text-align: center;
+        transition: background-color 0.2s; 
+        border: 1px solid #ddd; 
+        margin: 2px;
+        min-width: 80px;
+        font-size: 28px;
       }
-      .time-slot:hover { background-color: #e9ecef; }
-      .time-slot.selected { background-color: #0d6efd; color: white; border-color: #0d6efd; }
-      .time-slot.available { background-color: #e2f0ff; color: #0a58ca; border-color: #b6d4fe; }
+      
+      .time-slot:hover { 
+        background-color: #e9ecef; 
+      }
+      
+      .time-slot.selected { 
+        background-color: #0d6efd; 
+        color: white; 
+        border-color: #0d6efd; 
+      }
+      
+      .time-slot.available { 
+        background-color: #e2f0ff; 
+        color: #0a58ca; 
+        border-color: #b6d4fe; 
+      }
+      
       .time-slot.unavailable {
-         background-color: #f8f9fa; color: #adb5bd; text-decoration: line-through;
-         cursor: not-allowed; border-color: #e9ecef;
+        background-color: #f8f9fa; 
+        color: #adb5bd; 
+        text-decoration: line-through;
+        cursor: not-allowed; 
+        border-color: #e9ecef;
       }
-      .time-header { text-align: center; font-weight: bold; padding: 8px; vertical-align: middle; width: 60px; }
-      .day-header { text-align: center; font-weight: bold; padding: 8px; background-color: #f8f9fa; }
-      .holiday-cell { background-color: #f8d7da; text-align: center; vertical-align: middle; }
-      .today { background-color: #fff3cd; }
-      table { width: 100%; border-collapse: collapse; } /* テーブルの罫線を結合 */
-      th, td { padding: 5px; text-align: center; border: 1px solid #dee2e6; } /* セルに罫線を追加 */
-      .nav-link { cursor: pointer; }
-      .reservations-list { margin-top: 20px; }
-      .calendar-legend { display: flex; justify-content: center; flex-wrap: wrap; margin-bottom: 15px; gap: 15px; }
-      .legend-item { display: flex; align-items: center; }
-      .legend-color { width: 20px; height: 20px; border-radius: 4px; margin-right: 5px; border: 1px solid #ccc; }
-      #loadingIndicator { text-align: center; padding: 20px; }
-      #result { margin-top: 20px; }
+      
+      .time-header { 
+        text-align: center; 
+        font-weight: bold; 
+        padding: 10px; 
+        vertical-align: middle; 
+        width: 60px; 
+        font-size: 28px;
+      }
+      
+      .day-header { 
+        text-align: center; 
+        font-weight: bold; 
+        padding: 10px; 
+        background-color: #f8f9fa; 
+        font-size: 28px;
+      }
+      
+      .holiday-cell { 
+        background-color: #f8d7da; 
+        text-align: center; 
+        vertical-align: middle; 
+      }
+      
+      .today { 
+        background-color: #fff3cd; 
+      }
+      
+      table { 
+        width: 100%; 
+        border-collapse: collapse; 
+      }
+      
+      th, td { 
+        padding: 8px; 
+        text-align: center; 
+        border: 1px solid #dee2e6; 
+        font-size: 28px;
+      }
+      
+      .nav-link { 
+        cursor: pointer; 
+      }
+      
+      .reservations-list { 
+        margin-top: 20px; 
+      }
+      
+      .calendar-legend { 
+        display: flex; 
+        justify-content: center; 
+        flex-wrap: wrap; 
+        margin-bottom: 15px; 
+        gap: 15px; 
+      }
+      
+      .legend-item { 
+        display: flex; 
+        align-items: center; 
+        font-size: 28px;
+      }
+      
+      .legend-color { 
+        width: 20px; 
+        height: 20px; 
+        border-radius: 4px; 
+        margin-right: 5px; 
+        border: 1px solid #ccc; 
+      }
+      
+      #loadingIndicator { 
+        text-align: center; 
+        padding: 20px; 
+        font-size: 28px;
+      }
+      
+      #result { 
+        margin-top: 20px; 
+      }
+      
       /* 土日の色付け */
-      .day-header.sunday { color: #dc3545; } /* 日曜日 */
-      .day-header.saturday { color: #0d6efd; } /* 土曜日 */
-      .holiday-text { font-size: 0.9em; color: #6c757d; }
+      .day-header.sunday { 
+        color: #dc3545; 
+      }
+      
+      .day-header.saturday { 
+        color: #0d6efd; 
+      }
+      
+      .holiday-text { 
+        font-size: 28px; 
+        color: #6c757d; 
+      }
+      
+      /* 週ナビゲーションボタンのスタイル調整 */
+      #prevWeek, #nextWeek {
+        padding: 10px 16px;
+        font-size: 28px;
+      }
+      
+      /* 選択されている日時の表示スタイル */
+      #selectedDateTime {
+        font-size: 48px;
+        font-weight: bold;
+        padding: 12px;
+      }
+      
+      /* 予約リスト内のアイテムを見やすく調整 */
+      .list-group-item {
+        padding: 16px;
+      }
+      
+      .list-group-item h5 {
+        font-size: 32px;
+      }
+      
+      .list-group-item p {
+        font-size: 28px;
+      }
+      
+      .cancel-btn {
+        padding: 8px 16px;
+        font-size: 28px;
+      }
+      
+      /* セクション間のスペーシング調整 */
+      .tab-pane {
+        padding-top: 16px;
+      }
+      
+      /* アラートメッセージスタイル調整 */
+      .alert {
+        font-size: 28px;
+        padding: 12px;
+      }
+      
+      /* 見出しの調整 */
+      h4 {
+        font-size: 40px;
+        font-weight: bold;
+      }
+      
+      /* フォーム内のプレーンテキスト調整 */
+      .form-control-plaintext {
+        font-size: 28px;
+      }
+      
+      /* 強調表示するテキスト */
+      .emphasis {
+        font-size: 40px;
+        font-weight: bold;
+      }
+      
+      /* 現在の週表示 */
+      #currentWeek {
+        font-size: 28px;
+      }
+      
+      /* スピナー調整 */
+      .spinner-border {
+        width: 2rem;
+        height: 2rem;
+      }
+      
+      /* チェックボックススタイル調整 */
+      .menu-checkbox {
+        width: 30px;
+        height: 30px;
+        margin-right: 15px;
+      }
+      
+      .menu-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 15px;
+        font-size: 28px;
+      }
+      
+      .menu-price {
+        margin-left: auto;
+        font-weight: bold;
+        color: #333;
+      }
+      
+      #totalPriceCard {
+        background-color: #f8f9fa;
+        border-left: 5px solid #0d6efd;
+        padding: 15px;
+        margin-top: 20px;
+        margin-bottom: 20px;
+      }
+      
+      #totalPrice {
+        font-size: 36px;
+        color: #0d6efd;
+        font-weight: bold;
+      }
     </style>
 </head>
 
 <body>
   <div class="container form-container">
-    <h2 class="mb-4">予約</h2>
+    <!-- ヘッダーを画像にする -->
+    <div class="header-image-container">
+      <img src="https://app.veryda.jp/veryda_imegs/%E4%BA%88%E7%B4%84%E3%83%95%E3%82%A9%E3%83%BC%E3%83%A0.png" alt="予約フォーム" class="header-image">
+    </div>
 
     <ul class="nav nav-tabs mb-3" id="reservationTabs" role="tablist">
       <li class="nav-item" role="presentation">
@@ -62,21 +327,30 @@
           <input type="hidden" id="userId" name="userId" value="<?= userId ?>">
 
           <div class="row mb-3">
-            <div class="col-md-6">
-              <label class="form-label">お名前:</label>
-              <p class="form-control-plaintext"><?= userName ?></p>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label">電話番号:</label>
-              <p class="form-control-plaintext"><?= userPhone ?></p>
-            </div>
+           <div class="col-12">
+            <label class="form-label">お名前:</label>
+            <p class="form-control-plaintext"><?= userName ?>様</p>
+           </div>
+          <!-- 電話番号表示部分を削除 -->
           </div>
 
           <div class="mb-3">
-            <label for="menu" class="form-label">メニュー選択 <span class="text-danger">*</span></label>
-            <select class="form-select" id="menu" name="menu" required>
-              <option value="">選択してください</option>
-            </select>
+            <label class="form-label">メニュー選択 (複数選択可) <span class="text-danger">*</span></label>
+            <div id="menuOptions" class="border rounded p-3">
+              <!-- メニューオプションはJSで動的に生成 -->
+            </div>
+            
+            <!-- 合計金額表示エリア -->
+            <div id="totalPriceCard" class="mt-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <span>合計金額:</span>
+    <span id="totalPrice">0円</span>
+  </div>
+  <div class="d-flex justify-content-between align-items-center">
+    <span>所要時間(最長のメニュー):</span>
+    <span id="totalDuration">0分</span>
+  </div>
+</div>
           </div>
 
           <div class="mb-3">
@@ -90,26 +364,16 @@
 
           <h4>予約日時の選択 <span class="text-danger">*</span></h4>
 
-          <div class="calendar-legend">
-            <div class="legend-item">
-              <span class="legend-color time-slot available"></span><span>予約可能</span>
-            </div>
-            <div class="legend-item">
-              <span class="legend-color time-slot unavailable" style="text-decoration: none;"></span><span>予約不可</span>
-            </div>
-             <div class="legend-item">
-              <span class="legend-color holiday-cell" style="border: none;"></span><span>定休日</span>
-            </div>
-          </div>
+
 
           <div class="d-flex justify-content-between align-items-center mb-3">
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="prevWeek" disabled>&lt; 前の週</button>
+            <button type="button" class="btn btn-outline-secondary" id="prevWeek" disabled>&lt; 前の週</button>
             <div id="currentWeek" class="text-center fw-bold"></div>
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="nextWeek" disabled>次の週 &gt;</button>
+            <button type="button" class="btn btn-outline-secondary" id="nextWeek" disabled>次の週 &gt;</button>
           </div>
 
           <div class="calendar-container table-responsive">
-            <table class="table table-bordered table-sm">
+            <table class="table table-bordered">
               <thead id="calendarHeader">
                 <tr id="daysRow">
                   <th class="time-header">時間</th>
@@ -119,7 +383,7 @@
               </tbody>
             </table>
             <div id="loadingIndicator">
-               <div class="spinner-border spinner-border-sm text-primary" role="status">
+               <div class="spinner-border text-primary" role="status">
                  <span class="visually-hidden">Loading...</span>
                </div>
                カレンダーを読み込み中...
@@ -127,8 +391,8 @@
           </div>
 
           <div class="mb-3">
-            <label class="form-label">選択された日時:</label>
-            <div id="selectedDateTime" class="alert alert-secondary p-2">日時を選択してください</div>
+            <label class="form-label">選択されている日時:</label>
+            <div id="selectedDateTime" class="alert alert-secondary">日時を選択してください</div>
             <input type="hidden" id="selectedDate" name="date">
             <input type="hidden" id="selectedTime" name="time">
           </div>
@@ -136,6 +400,13 @@
           <button type="submit" class="btn btn-primary w-100" id="submitBtn" disabled>予約を確定する</button>
         </form>
         <div id="result" class="mt-3"></div>
+        
+        <!-- 予約完了後の表示 -->
+        <div id="successActions" style="display: none;">
+          <div class="alert alert-success">
+            <span class="emphasis">予約完了！</span>
+          </div>
+        </div>
       </div>
 
       <div class="tab-pane fade" id="list" role="tabpanel" aria-labelledby="list-tab">
@@ -159,6 +430,7 @@
     // --- クライアントサイドJavaScript ---
     // グローバル変数
     let currentWeekStart = null; // 表示中の週の開始日(Dateオブジェクト)
+    let selectedMenus = []; // 選択されたメニューを保持する配列
     
     // GASから渡されるテンプレート変数を使って初期化
     const startDate = new Date('<?= startDate ?>'); // 予約可能開始日
@@ -185,28 +457,131 @@
       setupEventListeners(); // イベントリスナーを設定
     });
 
+    // 1. populateOptions 関数を修正して、所要時間情報をチェックボックスの属性に追加し、selectedMenus配列にも追加する
+
+/**
+ * メニューとスタッフのプルダウン選択肢を生成する
+ */
+function populateOptions() {
+  const menuOptionsContainer = document.getElementById('menuOptions');
+  const staffSelect = document.getElementById('staff');
+
+  // メニューオプションを追加 (チェックボックスとして)
+  menuPlans.forEach(plan => {
+    const menuItem = document.createElement('div');
+    menuItem.className = 'menu-item';
+    
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = `menu-${plan.id}`;
+    checkbox.className = 'menu-checkbox';
+    checkbox.value = plan.id;
+    checkbox.setAttribute('data-price', plan.price);
+    checkbox.setAttribute('data-duration', plan.duration); // 所要時間を属性として追加
+    
+    const label = document.createElement('label');
+    label.htmlFor = `menu-${plan.id}`;
+    label.textContent = plan.name;
+    
+    const details = document.createElement('span');
+    details.className = 'menu-details';
+    details.textContent = `${plan.price.toLocaleString()}円 (所要時間: ${plan.duration}分)`;
+    
+    menuItem.appendChild(checkbox);
+    menuItem.appendChild(label);
+    menuItem.appendChild(details);
+    menuOptionsContainer.appendChild(menuItem);
+    
+    // チェックボックスの変更イベントを設定
+    checkbox.addEventListener('change', function() {
+      if (this.checked) {
+        selectedMenus.push({
+          id: this.value,
+          name: plan.name,
+          price: plan.price,
+          duration: plan.duration // 所要時間を追加
+        });
+      } else {
+        selectedMenus = selectedMenus.filter(item => item.id !== this.value);
+      }
+      updateTotalPrice(); // 合計金額を更新
+      updateTotalDuration(); // 所要時間を更新
+      validateForm(); // フォームのバリデーション状態を更新
+    });
+  });
+
+  // スタッフメンバーを追加
+  staffMembers.forEach(staff => {
+    const option = document.createElement('option');
+    option.value = staff.id;
+    option.textContent = staff.name;
+    staffSelect.appendChild(option);
+  });
+}
+
+// 2. updateTotalDuration 関数を追加
+
+/**
+ * 選択メニューの中で最長の所要時間を計算して表示
+ */
+function updateTotalDuration() {
+  const totalDurationElement = document.getElementById('totalDuration');
+  if (!totalDurationElement) return; // 要素がなければ何もしない
+  
+  let maxDuration = 0;
+  
+  // 選択されたメニューの中で最長の所要時間を取得
+  selectedMenus.forEach(menu => {
+    if (menu.duration > maxDuration) {
+      maxDuration = menu.duration;
+    }
+  });
+  
+  // 所要時間を表示
+  if (maxDuration > 0) {
+    totalDurationElement.textContent = `${maxDuration}分`;
+    totalDurationElement.style.color = '#0d6efd';
+  } else {
+    totalDurationElement.textContent = '0分';
+    totalDurationElement.style.color = '#6c757d';
+  }
+}
+
     /**
-     * メニューとスタッフのプルダウン選択肢を生成する
+     * 合計金額を計算して表示
      */
-    function populateOptions() {
-      const menuSelect = document.getElementById('menu');
-      const staffSelect = document.getElementById('staff');
-
-      // メニュープランを追加
-      menuPlans.forEach(plan => {
-        const option = document.createElement('option');
-        option.value = plan.id;
-        option.textContent = `${plan.name} (${plan.price}円)`;
-        menuSelect.appendChild(option);
+    function updateTotalPrice() {
+      const totalPriceElement = document.getElementById('totalPrice');
+      let total = 0;
+      
+      // 選択されたメニューの価格を合計
+      selectedMenus.forEach(menu => {
+        total += menu.price;
       });
+      
+      // 合計金額を表示
+      totalPriceElement.textContent = `${total.toLocaleString()}円`;
+      
+      // 合計金額が0円の場合と金額がある場合でスタイルを変更
+      if (total === 0) {
+        totalPriceElement.style.color = '#6c757d';
+      } else {
+        totalPriceElement.style.color = '#0d6efd';
+      }
+    }
 
-      // スタッフメンバーを追加
-      staffMembers.forEach(staff => {
-        const option = document.createElement('option');
-        option.value = staff.id;
-        option.textContent = staff.name;
-        staffSelect.appendChild(option);
-      });
+    /**
+     * フォームの入力状態をチェックし、送信ボタンの有効/無効を切り替える
+     */
+    function validateForm() {
+      const submitBtn = document.getElementById('submitBtn');
+      const staffSelected = document.getElementById('staff').value !== '';
+      const dateSelected = document.getElementById('selectedDate').value !== '';
+      const timeSelected = document.getElementById('selectedTime').value !== '';
+      const menuSelected = selectedMenus.length > 0;
+      
+      // 全ての必須項目が入力されていれば送信ボタンを有効化
+      submitBtn.disabled = !(staffSelected && dateSelected && timeSelected && menuSelected);
     }
 
     /**
@@ -219,6 +594,9 @@
       // 週移動ボタンのクリックイベント
       document.getElementById('prevWeek').addEventListener('click', () => navigateWeek(-7));
       document.getElementById('nextWeek').addEventListener('click', () => navigateWeek(7));
+
+      // スタッフ選択の変更イベント
+      document.getElementById('staff').addEventListener('change', validateForm);
 
       // 予約フォームの送信イベント
       document.getElementById('reservationForm').addEventListener('submit', handleFormSubmit);
@@ -380,7 +758,7 @@
             slotDiv.classList.add('unavailable'); // 予約不可スタイル
             slotDiv.textContent = '×'; // 記号で表示
           }
-           cell.appendChild(slotDiv); // セルに時間枠divを追加
+          cell.appendChild(slotDiv); // セルに時間枠divを追加
         }
         row.appendChild(cell); // 行にセルを追加
       }
@@ -401,104 +779,155 @@
       // クリックされた要素を選択状態にする
       element.classList.add('selected');
 
-      // 選択された日時をフォームの隠しフィールドに設定
+      // 選択されている日時をフォームの隠しフィールドに設定
       const date = element.dataset.date;
       const time = element.dataset.time;
       document.getElementById('selectedDate').value = date;
       document.getElementById('selectedTime').value = time;
 
-      // 選択された日時を表示エリアにフォーマットして表示
+      // 選択されている日時を表示エリアにフォーマットして表示
       const displayDate = formatDateWithDayJP(new Date(date + 'T' + time + ':00')); // YYYY年M月D日(曜) 形式
       document.getElementById('selectedDateTime').textContent = `${displayDate} ${time}`;
       // 表示エリアのスタイルを更新
       document.getElementById('selectedDateTime').classList.remove('alert-secondary');
       document.getElementById('selectedDateTime').classList.add('alert-info');
 
-      // 予約確定ボタンを有効化
-      document.getElementById('submitBtn').disabled = false;
+      // フォームの入力状態をチェック（送信ボタンの有効/無効を更新）
+      validateForm();
+
+      // 予約確定ボタンに自動スクロール
+      document.getElementById('submitBtn').scrollIntoView({ behavior: 'smooth' });
     }
 
     /**
-     * 予約フォーム送信時の処理
-     * @param {Event} e - 送信イベント
-     */
-    function handleFormSubmit(e) {
-      e.preventDefault(); // フォームの通常の送信動作をキャンセル
+ * 予約フォーム送信時の処理
+ * @param {Event} e - 送信イベント
+ */
+function handleFormSubmit(e) {
+  e.preventDefault(); // フォームの通常の送信動作をキャンセル
 
-      const submitBtn = document.getElementById('submitBtn');
-      const resultDiv = document.getElementById('result');
-      resultDiv.innerHTML = ''; // 前回の結果メッセージをクリア
+  const submitBtn = document.getElementById('submitBtn');
+  const resultDiv = document.getElementById('result');
+  resultDiv.innerHTML = ''; // 前回の結果メッセージをクリア
 
-      // --- 入力チェック ---
-      if (!document.getElementById('menu').value) {
-         displayMessage('result', 'メニューを選択してください。', 'warning');
-         return;
-      }
-      if (!document.getElementById('staff').value) {
-         displayMessage('result', 'スタッフを選択してください。', 'warning');
-         return;
-      }
-      if (!document.getElementById('selectedDate').value || !document.getElementById('selectedTime').value) {
-        displayMessage('result', '予約日時を選択してください。', 'warning');
-        return;
-      }
-      // --- 入力チェックここまで ---
+  // --- 入力チェック ---
+  if (selectedMenus.length === 0) {
+     displayMessage('result', 'メニューを1つ以上選択してください。', 'warning');
+     return;
+  }
+  if (!document.getElementById('staff').value) {
+     displayMessage('result', 'スタッフを選択してください。', 'warning');
+     return;
+  }
+  if (!document.getElementById('selectedDate').value || !document.getElementById('selectedTime').value) {
+    displayMessage('result', '予約日時を選択してください。', 'warning');
+    return;
+  }
+  // --- 入力チェックここまで ---
 
-      // 送信ボタンを無効化し、スピナーを表示
-      submitBtn.disabled = true;
-      submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 処理中...`;
-
-      // フォームデータをオブジェクトとして収集
-      const formData = {
-        userId: userId,
-        menu: document.getElementById('menu').value,
-        staff: document.getElementById('staff').value,
-        date: document.getElementById('selectedDate').value,
-        time: document.getElementById('selectedTime').value
-      };
-
-      console.log('予約データ送信:', formData);
-
-      // サーバーサイド(GAS)のcreateReservation関数を呼び出す
-      google.script.run
-        .withSuccessHandler(handleReservationSuccess) // 成功時コールバック
-        .withFailureHandler(handleReservationFailure) // 失敗時コールバック
-        .createReservation(formData); // フォームデータを渡す
+  // 予約内容の確認メッセージを作成
+  const menuNames = selectedMenus.map(menu => menu.name).join('、');
+  const totalPrice = selectedMenus.reduce((sum, menu) => sum + menu.price, 0);
+  
+  // 最長の所要時間を計算
+  let maxDuration = 0;
+  selectedMenus.forEach(menu => {
+    if (menu.duration > maxDuration) {
+      maxDuration = menu.duration;
     }
+  });
+  
+  const staffName = document.getElementById('staff').options[document.getElementById('staff').selectedIndex].text;
+  const dateValue = document.getElementById('selectedDate').value;
+  const timeValue = document.getElementById('selectedTime').value;
+  const displayDate = formatDateWithDayJP(new Date(dateValue + 'T' + timeValue + ':00'));
+  
+  // 確認ダイアログを表示
+  const confirmMessage = `以下の内容で予約を確定しますか？\n\n日時: ${displayDate} ${timeValue}\nメニュー: ${menuNames}\n所要時間: ${maxDuration}分\n合計金額: ${totalPrice.toLocaleString()}円\n担当: ${staffName}`;
+  
+  if (!confirm(confirmMessage)) {
+    // キャンセルされた場合は処理を中止
+    return;
+  }
+
+  // 送信ボタンを無効化し、スピナーを表示
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 処理中...`;
+
+  // フォームデータをオブジェクトとして収集
+  const formData = {
+    userId: userId,
+    menus: selectedMenus.map(menu => menu.id), // メニューIDの配列
+    menuNames: selectedMenus.map(menu => menu.name), // メニュー名の配列（表示用）
+    durations: selectedMenus.map(menu => menu.duration), // 所要時間の配列
+    maxDuration: maxDuration, // 最長所要時間
+    totalPrice: totalPrice, // 合計金額
+    staff: document.getElementById('staff').value,
+    date: document.getElementById('selectedDate').value,
+    time: document.getElementById('selectedTime').value
+  };
+
+  console.log('予約データ送信:', formData);
+
+  // サーバーサイド(GAS)のcreateReservation関数を呼び出す
+  google.script.run
+    .withSuccessHandler(handleReservationSuccess) // 成功時コールバック
+    .withFailureHandler(handleReservationFailure) // 失敗時コールバック
+    .createReservation(formData); // フォームデータを渡す
+}
 
     /**
-     * 予約作成成功時のコールバック関数
-     * @param {object} result - サーバーから返された結果オブジェクト { success: boolean, message: string, ... }
-     */
-    function handleReservationSuccess(result) {
-      console.log('予約結果:', result);
-      const submitBtn = document.getElementById('submitBtn');
-      submitBtn.innerHTML = '予約を確定する'; // ボタンのテキストを元に戻す
+ * 予約作成成功時のコールバック関数
+ * @param {object} result - サーバーから返された結果オブジェクト { success: boolean, message: string, ... }
+ */
+function handleReservationSuccess(result) {
+  console.log('予約結果:', result);
+  const submitBtn = document.getElementById('submitBtn');
+  submitBtn.innerHTML = '予約を確定する'; // ボタンのテキストを元に戻す
 
-      if (result.success) {
-        // 成功メッセージを表示
-        displayMessage('result', result.message, 'success');
-        // フォームの内容をリセット
-        document.getElementById('reservationForm').reset();
-        // 選択日時表示をリセット
-        document.getElementById('selectedDateTime').textContent = '日時を選択してください';
-        document.getElementById('selectedDateTime').classList.remove('alert-info');
-        document.getElementById('selectedDateTime').classList.add('alert-secondary');
-         // カレンダーの選択状態を解除
-         const previouslySelected = document.querySelector('.time-slot.selected');
-         if (previouslySelected) {
-           previouslySelected.classList.remove('selected');
-         }
-        // 予約確定ボタンを再度無効化
-        submitBtn.disabled = true;
-        // カレンダーを更新して最新の空き状況を反映
-        updateCalendar();
-      } else {
-        // 失敗メッセージを表示 (例: 予約上限、競合など)
-        displayMessage('result', result.message, 'danger');
-        submitBtn.disabled = false; // 失敗時はボタンを再度有効化
-      }
+  if (result.success) {
+    // 成功メッセージを表示
+    displayMessage('result', result.message, 'success');
+    
+    // 予約完了後の表示
+    document.getElementById('successActions').style.display = 'block';
+    
+    // フォームの内容をリセット
+    document.getElementById('reservationForm').reset();
+    
+    // 選択日時表示をリセット
+    document.getElementById('selectedDateTime').textContent = '日時を選択してください';
+    document.getElementById('selectedDateTime').classList.remove('alert-info');
+    document.getElementById('selectedDateTime').classList.add('alert-secondary');
+    
+    // カレンダーの選択状態を解除
+    const previouslySelected = document.querySelector('.time-slot.selected');
+    if (previouslySelected) {
+      previouslySelected.classList.remove('selected');
     }
+    
+    // メニュー選択をリセット
+    selectedMenus = [];
+    document.querySelectorAll('.menu-checkbox').forEach(checkbox => {
+      checkbox.checked = false;
+    });
+    updateTotalPrice(); // 合計金額表示を更新
+    updateTotalDuration(); // 所要時間表示を更新
+    
+    // 予約確定ボタンを再度無効化
+    submitBtn.disabled = true;
+    
+    // カレンダーを更新して最新の空き状況を反映
+    updateCalendar();
+    
+    // 成功通知までスクロール
+    document.getElementById('successActions').scrollIntoView({ behavior: 'smooth' });
+  } else {
+    // 失敗メッセージを表示 (例: 予約上限、競合など)
+    displayMessage('result', result.message, 'danger');
+    submitBtn.disabled = false; // 失敗時はボタンを再度有効化
+  }
+}
 
     /**
      * 予約作成失敗時のコールバック関数
@@ -559,8 +988,21 @@
 
       // 各予約情報をリストアイテムとして追加
       reservations.forEach(res => {
-        // メニュー名とスタッフ名をIDから検索 (見つからない場合はIDをそのまま表示)
-        const menu = menuPlans.find(m => m.id === res.menu) || { name: res.menu };
+        // 予約情報の処理
+        let menuDisplay = '情報なし';
+        if (res.menus && res.menus.length > 0) {
+          // メニューが配列の場合（複数選択対応版）
+          const menuItems = res.menus.map(menuId => {
+            const menuItem = menuPlans.find(m => m.id === menuId);
+            return menuItem ? menuItem.name : menuId;
+          });
+          menuDisplay = menuItems.join('、');
+        } else if (res.menu) {
+          // 従来の単一メニュー方式
+          const menu = menuPlans.find(m => m.id === res.menu);
+          menuDisplay = menu ? menu.name : res.menu;
+        }
+        
         const staff = staffMembers.find(s => s.id === res.staff) || { name: res.staff };
 
         const item = document.createElement('div');
@@ -571,9 +1013,9 @@
             <h5 class="mb-1">${res.date} ${res.time}</h5>
             <small>予約ID: ${res.id}</small>
           </div>
-          <p class="mb-1">メニュー: ${menu.name}</p>
+          <p class="mb-1">メニュー: ${menuDisplay}</p>
           <p class="mb-1">担当: ${staff.name}</p>
-          <button class="btn btn-sm btn-outline-danger mt-2 cancel-btn" data-reservation-id="${res.id}">
+          <button class="btn btn-outline-danger mt-2 cancel-btn" data-reservation-id="${res.id}">
              <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
              キャンセルする
           </button>
