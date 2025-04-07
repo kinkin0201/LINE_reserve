@@ -1,0 +1,2214 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <title>予約フォーム</title>
+    <style>
+      /* スタイル定義 */
+      body { 
+        padding: 60px; 
+        font-family: 'Hiragino Kaku Gothic ProN', 'メイリオ', sans-serif;
+        font-size: 28px;
+        line-height: 1.6;
+      }
+      
+      .form-container { 
+        max-width: 100%; 
+        margin: 0 auto; 
+        padding: 0;
+      }
+      
+      .calendar-container { 
+        margin-bottom: 20px; 
+        overflow-x: auto; 
+      }
+      
+      /* 画像ヘッダー */
+      .header-image-container {
+        width: 100%;
+        margin-bottom: 16px;
+        text-align: center;
+      }
+
+      .header-image {
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px 8px 0 0; /* 上部の角を丸くする */
+      }
+      
+      /* タブナビゲーションの調整 */
+      .nav-tabs .nav-link {
+        font-size: 28px;
+        padding: 12px 16px;
+        color: #6c757d; /* 非アクティブタブは灰色 */
+        font-weight: normal; /* 非アクティブタブは標準の太さ */
+      }
+
+      .nav-tabs .nav-link.active {
+        color: #0d6efd; /* アクティブタブは青色 */
+        font-weight: bold; /* アクティブタブは太字 */
+        border-bottom: 3px solid #0d6efd; /* 下線を少し強調 */
+      }
+      
+      /* フォーム要素の調整 */
+      .form-label {
+        font-size: 28px;
+        font-weight: bold;
+        margin-bottom: 8px;
+      }
+      
+      .form-select,
+      .form-control {
+        font-size: 28px;
+        padding: 12px;
+        height: auto;
+      }
+      
+      /* 時間枠のスタイル調整 */
+      .time-slot {
+        cursor: pointer; 
+        padding: 10px; 
+        border-radius: 6px; 
+        text-align: center;
+        transition: background-color 0.2s; 
+        border: 1px solid #ddd; 
+        margin: 2px;
+        min-width: 80px;
+        font-size: 28px;
+      }
+      
+      .time-slot:hover { 
+        background-color: #e9ecef; 
+      }
+      
+      .time-slot.selected { 
+        background-color: #0d6efd; 
+        color: white; 
+        border-color: #0d6efd; 
+      }
+      
+      .time-slot.available { 
+        background-color: #e2f0ff; 
+        color: #0a58ca; 
+        border-color: #b6d4fe; 
+      }
+      
+      .time-slot.unavailable {
+       background-color: #f8f9fa;
+       color: #adb5bd;
+        /* text-decorationを削除 */
+        /* text-decoration: line-through; */
+        cursor: not-allowed;
+        border-color: #e9ecef;
+        /* 以下を追加 */
+        font-weight: bold; /* 記号を強調 */
+        /* または別の視覚的な区別を追加 */
+        opacity: 0.7; /* 透明度で区別 */
+      }
+      
+      .time-header { 
+        text-align: center; 
+        font-weight: bold; 
+        padding: 10px; 
+        vertical-align: middle; 
+        width: 60px; 
+        font-size: 28px;
+      }
+      
+      .day-header { 
+        text-align: center; 
+        font-weight: bold; 
+        padding: 10px; 
+        background-color: #f8f9fa; 
+        font-size: 28px;
+      }
+      
+      .holiday-cell { 
+        background-color: #f8d7da; 
+        text-align: center; 
+        vertical-align: middle; 
+      }
+      
+      .today { 
+        background-color: #fff3cd; 
+      }
+      
+      table { 
+        width: 100%; 
+        border-collapse: collapse; 
+      }
+      
+      th, td { 
+        padding: 8px; 
+        text-align: center; 
+        border: 1px solid #dee2e6; 
+        font-size: 28px;
+      }
+      
+      .nav-link { 
+        cursor: pointer; 
+      }
+      
+      .reservations-list { 
+        margin-top: 20px; 
+      }
+      
+      .calendar-legend { 
+        display: flex; 
+        justify-content: center; 
+        flex-wrap: wrap; 
+        margin-bottom: 15px; 
+        gap: 15px; 
+      }
+      
+      .legend-item { 
+        display: flex; 
+        align-items: center; 
+        font-size: 28px;
+      }
+      
+      .legend-color { 
+        width: 20px; 
+        height: 20px; 
+        border-radius: 4px; 
+        margin-right: 5px; 
+        border: 1px solid #ccc; 
+      }
+      
+      #loadingIndicator { 
+        text-align: center; 
+        padding: 20px; 
+        font-size: 28px;
+      }
+      
+      #result { 
+        margin-top: 20px; 
+      }
+      
+      /* 土日の色付け */
+      .day-header.sunday { 
+        color: #dc3545; 
+      }
+      
+      .day-header.saturday { 
+        color: #0d6efd; 
+      }
+      
+      .holiday-text { 
+        font-size: 28px; 
+        color: #6c757d; 
+      }
+      
+      /* 週ナビゲーションボタンのスタイル調整 */
+      #prevWeek, #nextWeek {
+        padding: 10px 16px;
+        font-size: 28px;
+      }
+      
+      /* 選択されている日時の表示スタイル */
+      #selectedDateTime {
+        font-size: 48px;
+        font-weight: bold;
+        padding: 12px;
+      }
+      
+      /* 予約リスト内のアイテムを見やすく調整 */
+      .list-group-item {
+        padding: 16px;
+      }
+      
+      .list-group-item h5 {
+        font-size: 32px;
+      }
+      
+      .list-group-item p {
+        font-size: 28px;
+      }
+      
+      .cancel-btn {
+        padding: 8px 16px;
+        font-size: 28px;
+      }
+      
+      /* セクション間のスペーシング調整 */
+      .tab-pane {
+        padding-top: 16px;
+      }
+      
+      /* アラートメッセージスタイル調整 */
+      .alert {
+        font-size: 28px;
+        padding: 12px;
+      }
+      
+      /* 見出しの調整 */
+      h4 {
+        font-size: 40px;
+        font-weight: bold;
+      }
+      
+      /* フォーム内のプレーンテキスト調整 */
+      .form-control-plaintext {
+        font-size: 28px;
+      }
+      
+      /* 強調表示するテキスト */
+      .emphasis {
+        font-size: 40px;
+        font-weight: bold;
+      }
+      
+      /* 現在の週表示 */
+      #currentWeek {
+        font-size: 28px;
+      }
+      
+      /* スピナー調整 */
+      .spinner-border {
+        width: 2rem;
+        height: 2rem;
+      }
+      
+      /* チェックボックススタイル調整 */
+      .menu-checkbox {
+        width: 30px;
+        height: 30px;
+        margin-right: 15px;
+      }
+      
+      .menu-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 15px;
+        font-size: 28px;
+      }
+      
+      .menu-price {
+        margin-left: auto;
+        font-weight: bold;
+        color: #333;
+      }
+      
+      #totalPriceCard {
+        background-color: #f8f9fa;
+        border-left: 5px solid #0d6efd;
+        padding: 15px;
+        margin-top: 20px;
+        margin-bottom: 20px;
+      }
+      
+      #totalPrice {
+        font-size: 36px;
+        color: #0d6efd;
+        font-weight: bold;
+      }
+      
+      /* 予約確認・キャンセル画面の追加スタイル */
+      .reservation-card {
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        overflow: hidden;
+      }
+
+      .reservation-card:hover {
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        transform: translateY(-2px);
+      }
+
+      .reservation-card .card-header {
+        font-size: 32px; /* 24pxから拡大 */
+        padding: 12px 16px;
+        font-weight: bold;
+      }
+
+      .reservation-card .card-title {
+        font-size: 36px;
+        margin-bottom: 16px;
+        font-weight: bold;
+      }
+
+      /* カード内の強調テキスト */
+      .reservation-card .card-text strong {
+        font-weight: bold;
+      }
+
+      .reservation-card .card-text {
+        font-size: 36px;
+        margin-bottom: 10px;
+        font-weight: bold;
+      }
+
+      .reservation-card .cancel-btn {
+        font-size: 28px;
+        padding: 10px 20px;
+        border-radius: 10px;
+      }
+
+      /* アイコンサイズ調整 */
+      .reservation-card .bi {
+        font-size: 110%;
+        vertical-align: middle;
+      }
+
+
+      .reservation-card .bg-warning.text-dark {
+        padding: 6px 12px;
+        border-radius: 5px;
+        font-size: 24px;
+      }
+
+      /* 予約ID表示 */
+      .reservation-card .card-header small {
+        font-size: 20px; /* サイズアップ */
+        font-weight: bold;
+      }
+
+      /* キャンセル確認モーダル */
+      #cancelConfirmModal .modal-dialog {
+        max-width: 90%;
+        margin: 1.75rem auto;
+      }
+
+      #cancelConfirmModal .modal-content {
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      #cancelConfirmModal .modal-header {
+        font-size: 48px;
+        padding: 24px;
+      }
+
+      #cancelConfirmModal .modal-body {
+        font-size: 36px;
+        padding: 24px;
+      }
+
+      #cancelConfirmModal .modal-footer .btn {
+        font-size: 32px;
+        padding: 12px 24px;
+        border-radius: 8px;
+      }
+
+      #cancelDetails {
+        background-color: #f8f9fa;
+        border-left: 5px solid #6c757d;
+        font-size: 30px;
+        padding: 15px;
+        border-radius: 8px;
+      }
+
+      /* 予約一覧ヘッダー */
+      #reservationsList h5 {
+        font-size: 36px;
+      }
+
+      #reservationsList .badge {
+        font-size: 28px;
+      }
+
+      /* トースト通知用スタイル */
+      .toast {
+        min-width: 350px;
+        border-radius: 8px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        font-size: 32px;
+      }
+
+      .toast-header {
+        padding: 14px 18px;
+        font-size: 32px;
+      }
+
+      .toast-body {
+        padding: 18px;
+      }
+
+      /* キャンセル結果メッセージ */
+      #cancelResult .alert {
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        font-size: 32px;
+        padding: 15px;
+        margin-bottom: 20px;
+      }
+      
+      /* 予約確定ボタンをより魅力的に */
+      #submitBtn {
+        background-color: #00B900;
+        color: white;
+        padding: 20px;
+        font-size: 40px;
+        font-weight: bold;
+        margin-top: 20px;
+        margin-bottom: 30px;
+        border-radius: 12px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+        border: none;
+        position: relative;
+        overflow: hidden;
+      }
+
+      #submitBtn:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        background-color: #00a000;
+      }
+
+      #submitBtn:active:not(:disabled) {
+        transform: translateY(1px);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      #submitBtn:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+        box-shadow: none;
+        opacity: 0.7;
+      }
+
+      /* 選択された日時をより強調表示 */
+      #selectedDateTime.alert-info {
+        background-color: #e3f2fd;
+        border-color: #90caf9;
+        color: #0d47a1;
+        font-size: 40px;
+        font-weight: bold;
+        padding: 16px;
+        border-radius: 10px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+        border-left: 8px solid #1976d2;
+      }
+
+      /* 予約確定モーダルスタイル */
+      #confirmationModal .modal-dialog {
+        max-width: 80%;
+        max-width: 1000px;
+        margin: 1.75rem auto;
+      }
+
+      #confirmationModal .modal-content {
+        border-radius: 15px;
+        overflow: hidden;
+      }
+
+      #confirmationModal .modal-header {
+        background-color: #00B900;
+        color: white;
+        padding: 12px 20px;
+        font-size: 40px;
+        font-weight: bold;
+      }
+
+      /* 予約確定モーダルのタイトルスタイル修正 */
+      #confirmationModal .modal-title {
+        font-size: 48px;
+        font-weight: bold;
+      }
+
+      #confirmationModal .modal-body {
+        padding: 25px;
+        font-size: 32px;
+      }
+
+      #confirmationModal .confirmation-item {
+        margin-bottom: 15px;
+        display: flex;
+        border-bottom: 1px solid #f0f0f0;
+        padding-bottom: 15px;
+      }
+
+      #confirmationModal .confirmation-label {
+        font-weight: bold;
+        width: 35%;
+        color: #555;
+      }
+
+      #confirmationModal .confirmation-value {
+        flex-grow: 1;
+        font-weight: bold;
+      }
+
+      #confirmationModal .modal-footer {
+        padding: 20px 25px;
+        border-top: 1px solid #f0f0f0;
+      }
+
+      #confirmationModal .btn-secondary {
+        font-size: 30px;
+        padding: 10px 20px;
+        border-radius: 8px;
+      }
+
+      #confirmationModal .btn-success {
+        background-color: #00B900;
+        font-size: 30px;
+        padding: 10px 25px;
+        border-radius: 8px;
+        border: none;
+        font-weight: bold;
+      }
+
+      /* 予約完了時の表示を改善 */
+      #successActions {
+        transition: all 0.5s ease;
+        max-height: 0;
+        overflow: hidden;
+      }
+
+      #successActions.show {
+        max-height: 500px;
+        margin-top: 30px;
+        margin-bottom: 30px;
+      }
+
+      .completion-message {
+        background-color: #e8f5e9;
+        border-radius: 12px;
+        padding: 30px;
+        text-align: center;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        border-left: 8px solid #4CAF50;
+      }
+
+      .completion-message h3 {
+        font-size: 48px;
+        color: #2E7D32;
+        margin-bottom: 15px;
+        font-weight: bold;
+      }
+
+      .completion-message p {
+        font-size: 32px;
+        color: #555;
+        margin-bottom: 25px;
+      }
+
+      .next-steps {
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+        margin-top: 25px;
+      }
+
+      .next-steps .btn {
+        font-size: 30px;
+        padding: 12px 25px;
+        border-radius: 8px;
+      }
+
+      /* アニメーション効果 */
+      @keyframes checkmark-circle {
+        0% {
+          transform: scale(0);
+          opacity: 0;
+        }
+        50% {
+          transform: scale(1.1);
+          opacity: 1;
+        }
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+
+      .fade-in {
+        opacity: 0;
+        animation: fadeIn ease 1s forwards;
+      }
+
+      @keyframes fadeIn {
+        0% { opacity: 0; }
+        100% { opacity: 1; }
+      }
+
+      /* モバイル対応調整 */
+      @media (max-width: 768px) {
+        #confirmationModal .confirmation-item {
+          flex-direction: column;
+        }
+        
+        #confirmationModal .confirmation-label {
+          width: 100%;
+          margin-bottom: 5px;
+        }
+        
+        .next-steps {
+          flex-direction: column;
+        }
+      }
+    </style>
+</head>
+
+<body>
+  <div class="container form-container">
+    <!-- ヘッダーを画像にする -->
+    <div class="header-image-container">
+      <img src="https://app.veryda.jp/veryda_imegs/%E4%BA%88%E7%B4%84%E3%83%95%E3%82%A9%E3%83%BC%E3%83%A0.png" alt="予約フォーム" class="header-image">
+    </div>
+
+    <ul class="nav nav-tabs mb-3" id="reservationTabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="new-tab" data-bs-toggle="tab" data-bs-target="#new" type="button" role="tab" aria-controls="new" aria-selected="true">新規予約</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="list-tab" data-bs-toggle="tab" data-bs-target="#list" type="button" role="tab" aria-controls="list" aria-selected="false">予約確認・キャンセル</button>
+      </li>
+    </ul>
+
+    <div class="tab-content" id="reservationTabContent">
+
+      <div class="tab-pane fade show active" id="new" role="tabpanel" aria-labelledby="new-tab">
+        <form id="reservationForm">
+          <input type="hidden" id="userId" name="userId" value="<?= userId ?>">
+
+          <div class="row mb-3">
+           <div class="col-12">
+            <label class="form-label">お名前:</label>
+            <p class="form-control-plaintext"><?= userName ?>様</p>
+           </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">メニュー選択 (複数選択可) <span class="text-danger">*</span></label>
+            <div id="menuOptions" class="border rounded p-3">
+              <!-- メニューオプションはJSで動的に生成 -->
+            </div>
+            
+            <!-- 合計金額表示エリア -->
+            <div id="totalPriceCard" class="mt-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span>合計金額:</span>
+                <span id="totalPrice">0円</span>
+              </div>
+              <div class="d-flex justify-content-between align-items-center">
+                <span>所要時間(最長のメニュー):</span>
+                <span id="totalDuration">0分</span>
+              </div>
+            </div>
+          </div>
+
+          <hr class="my-4">
+
+          <h4>予約日時の選択 <span class="text-danger">*</span></h4>
+
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <button type="button" class="btn btn-outline-secondary" id="prevWeek" disabled>&lt; 前の週</button>
+            <div id="currentWeek" class="text-center fw-bold"></div>
+            <button type="button" class="btn btn-outline-secondary" id="nextWeek" disabled>次の週 &gt;</button>
+          </div>
+
+          <div class="calendar-container table-responsive">
+            <table class="table table-bordered">
+              <thead id="calendarHeader">
+                <tr id="daysRow">
+                  <th class="time-header">時間</th>
+                </tr>
+              </thead>
+              <tbody id="calendarBody">
+              </tbody>
+            </table>
+            <div id="loadingIndicator">
+               <div class="spinner-border text-primary" role="status">
+                 <span class="visually-hidden">Loading...</span>
+               </div>
+               メニューを選択後に予約可能な時間枠が表示されます。
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">選択されている日時:</label>
+            <div id="selectedDateTime" class="alert alert-secondary">日時を選択してください</div>
+            <input type="hidden" id="selectedDate" name="date">
+            <input type="hidden" id="selectedTime" name="time">
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100" id="submitBtn" disabled>
+            <i class="bi bi-calendar-check me-2"></i>予約を確定する
+          </button>
+        </form>
+        <div id="result" class="mt-3"></div>
+        
+        <!-- 予約完了後の表示（改良版） -->
+        <div id="successActions" style="display: none;">
+          <div class="completion-message">
+            <span class="bi bi-check-circle-fill text-success" style="font-size: 80px; display: block; margin: 0 auto; animation: checkmark-circle 0.5s ease-in-out;"></span>
+            <h3 class="fade-in">予約完了！</h3>
+            <p class="fade-in">ご予約ありがとうございます。当日のご来店をお待ちしております。</p>
+            <div class="alert alert-success">
+              <i class="bi bi-envelope me-2"></i>予約確定メッセージが送信されました。
+            </div>
+            <div class="next-steps">
+              <button class="btn btn-outline-primary" id="newReservationBtn">
+                <i class="bi bi-plus-circle me-2"></i>新しい予約を作成
+              </button>
+              <button class="btn btn-outline-secondary" id="viewReservationsBtn">
+                <i class="bi bi-list-ul me-2"></i>予約一覧を表示
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="list" role="tabpanel" aria-labelledby="list-tab">
+        <h4>予約確認・キャンセル</h4>
+        <div id="reservationsList" class="reservations-list">
+          <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p>予約情報を読み込み中...</p>
+          </div>
+        </div>
+         <div id="cancelResult" class="mt-3"></div>
+      </div>
+
+    </div>
+  </div>
+  
+  <!-- 予約確認モーダル -->
+  <div class="modal fade" id="confirmationModal" tabindex="-1" aria-labelledby="confirmationModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" style="max-width: 80%;">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="confirmationModalLabel">
+            <i class="bi bi-calendar-check me-2"></i>予約内容の確認
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="confirmation-item">
+            <div class="confirmation-label">
+              <i class="bi bi-calendar-event me-2"></i>日付
+            </div>
+            <div class="confirmation-value" id="confirmDate"></div>
+          </div>
+          
+          <div class="confirmation-item">
+            <div class="confirmation-label">
+              <i class="bi bi-clock me-2"></i>時間
+            </div>
+            <div class="confirmation-value" id="confirmTime"></div>
+          </div>
+          
+          <div class="confirmation-item">
+            <div class="confirmation-label">
+              <i class="bi bi-list-check me-2"></i>メニュー
+            </div>
+            <div class="confirmation-value" id="confirmMenu"></div>
+          </div>
+          
+          <div class="confirmation-item">
+            <div class="confirmation-label">
+              <i class="bi bi-hourglass-split me-2"></i>所要時間
+            </div>
+            <div class="confirmation-value" id="confirmDuration"></div>
+          </div>
+          
+          <div class="confirmation-item">
+            <div class="confirmation-label">
+              <i class="bi bi-cash-coin me-2"></i>合計金額
+            </div>
+            <div class="confirmation-value" id="confirmPrice"></div>
+          </div>
+          
+          <div class="alert alert-info mt-3">
+            <i class="bi bi-info-circle me-2"></i>
+            この内容で予約を確定します。よろしいですか？
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+            <i class="bi bi-arrow-left me-2"></i>戻る
+          </button>
+          <button type="button" class="btn btn-success" id="modalConfirmBtn">
+            <i class="bi bi-check-circle me-2"></i>予約を確定する
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- キャンセル確認モーダル -->
+  <div class="modal fade" id="cancelConfirmModal" tabindex="-1" aria-labelledby="cancelConfirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-danger text-white">
+          <h5 class="modal-title" id="cancelConfirmModalLabel">予約キャンセルの確認</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p>以下の予約をキャンセルします。この操作は取り消せません。</p>
+          <div id="cancelDetails" class="alert alert-light">
+            <p><strong>予約ID:</strong> <span id="modalReservationId"></span></p>
+            <p><strong>予約日時:</strong> <span id="modalReservationDateTime"></span></p>
+            <p><strong>メニュー:</strong> <span id="modalReservationMenu"></span></p>
+          </div>
+          <p class="text-danger">本当にキャンセルしますか？</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">戻る</button>
+          <button type="button" class="btn btn-danger" id="confirmCancelBtn">
+            <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+            キャンセルを確定する
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+// --- クライアントサイドJavaScript ---
+// グローバル変数
+let currentWeekStart = null; // 表示中の週の開始日(Dateオブジェクト)
+let selectedMenus = []; // 選択されたメニューを保持する配列
+
+// GASから渡されるテンプレート変数を使って初期化
+const startDate = new Date('<?= startDate ?>'); // 予約可能開始日
+const endDate = new Date('<?= endDate ?>');     // 予約可能終了日
+const userId = document.getElementById('userId').value; // ユーザーID
+
+// GASから渡されるJSON文字列をパースしてオブジェクトに変換
+const menuPlans = JSON.parse('<?= menuPlansJson ?>');
+const staffMembers = JSON.parse('<?= staffMembersJson ?>');
+const businessHours = JSON.parse('<?= businessHoursJson ?>');
+const closedDays = JSON.parse('<?= closedDaysJson ?>');
+const minDaysAhead = <?= minDaysAhead ?>;
+const daysAhead = <?= daysAhead ?>;
+
+/**
+ * DOM読み込み完了時の初期化処理
+ */
+// --- クライアントサイドJavaScript --- 初期化部分の修正
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('ページ初期化開始');
+  try {
+    // 週の開始日を本日に設定（日曜日ではなく本日から始まる）
+    const today = new Date(); // 本日の日付
+    currentWeekStart = new Date(today); // 本日から始まる週
+    console.log('週の開始日セット:', formatDate(currentWeekStart));
+
+    populateOptions(); // メニューの選択肢を生成
+    console.log('メニュー生成完了');
+    
+    setupEventListeners(); // イベントリスナーを設定
+    console.log('イベントリスナー設定完了');
+    
+    // 日付変更検出をセットアップ
+    setupDateChangeDetection();
+    console.log('日付変更検出をセットアップしました');
+    
+    // カレンダーボディにメニュー選択を促すメッセージを表示
+    const calendarBody = document.getElementById('calendarBody');
+    calendarBody.innerHTML = `
+        <tr>
+          <td colspan="8" class="text-center p-4">
+            <div class="alert alert-warning" style="font-size: 30px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border-left: 5px solid #ffc107;">
+              <i class="bi bi-hand-index-thumb me-2"></i>
+              まずは上部のメニューから、ご希望のサービスを選択してください
+            </div>
+          </td>
+        </tr>
+    `;
+    
+    // メニューセクションを目立たせる
+    const menuOptionsContainer = document.getElementById('menuOptions');
+    menuOptionsContainer.classList.add('border-primary');
+    
+    // 週ナビゲーションの状態を更新
+    updateWeekNavigation();
+    
+  } catch (error) {
+    console.error('初期化中にエラーが発生しました:', error);
+    alert('ページの初期化中にエラーが発生しました: ' + error.message);
+  }
+});
+
+// 日付変更検出関数も修正
+function setupDateChangeDetection() {
+  // 現在の日付を記録
+  let lastDate = new Date().getDate();
+  
+  // 1分ごとに日付をチェック
+  setInterval(function() {
+    const currentDate = new Date().getDate();
+    // 日付が変わった場合
+    if (currentDate !== lastDate) {
+      console.log('日付が変わりました。カレンダーを更新します。');
+      lastDate = currentDate;
+      
+      // 週の開始日を今日の日付に設定
+      const today = new Date();
+      currentWeekStart = new Date(today);
+      
+      // メニューが選択されている場合のみカレンダーを更新
+      if (selectedMenus.length > 0) {
+        updateCalendar();
+      } else {
+        // 週ナビゲーションの状態だけ更新
+        updateWeekNavigation();
+      }
+    }
+  }, 60000); // 60秒ごとにチェック
+}
+
+/**
+ * メニュー選択肢を生成する（改良版）
+ */
+function populateOptions() {
+  const menuOptionsContainer = document.getElementById('menuOptions');
+  
+  // メニューオプションを追加 (チェックボックスとして)
+  menuPlans.forEach(plan => {
+    const menuItem = document.createElement('div');
+    menuItem.className = 'menu-item';
+    
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = `menu-${plan.id}`;
+    checkbox.className = 'menu-checkbox';
+    checkbox.value = plan.id;
+    checkbox.setAttribute('data-price', plan.price);
+    checkbox.setAttribute('data-duration', plan.duration); // 所要時間を属性として追加
+    
+    const label = document.createElement('label');
+    label.htmlFor = `menu-${plan.id}`;
+    label.textContent = plan.name;
+    
+    const details = document.createElement('span');
+    details.className = 'menu-details ms-auto';
+    details.textContent = `${plan.price.toLocaleString()}円 (所要時間: ${plan.duration}分)`;
+    
+    menuItem.appendChild(checkbox);
+    menuItem.appendChild(label);
+    menuItem.appendChild(details);
+    menuOptionsContainer.appendChild(menuItem);
+  });
+  
+  // メニューチェックボックスのイベントを設定
+  setupMenuCheckboxEvents();
+}
+
+/**
+ * チェックボックスの変更イベントを設定する関数（改良版）
+ */
+function setupMenuCheckboxEvents() {
+  document.querySelectorAll('.menu-checkbox').forEach(checkbox => {
+    checkbox.addEventListener('change', function() {
+      const menuId = this.value;
+      const menuPlan = menuPlans.find(plan => plan.id === menuId);
+      
+      if (this.checked) {
+        selectedMenus.push({
+          id: menuId,
+          name: menuPlan.name,
+          price: menuPlan.price,
+          duration: menuPlan.duration
+        });
+      } else {
+        selectedMenus = selectedMenus.filter(item => item.id !== menuId);
+      }
+      
+      updateTotalPrice();
+      updateTotalDuration();
+      validateForm();
+      
+      // メニュー選択状態が変わったら即座にカレンダーを更新
+      // 選択中のタイムスロットをリセット
+      document.getElementById('selectedDate').value = '';
+      document.getElementById('selectedTime').value = '';
+      document.getElementById('selectedDateTime').textContent = '日時を選択してください';
+      document.getElementById('selectedDateTime').classList.remove('alert-info');
+      document.getElementById('selectedDateTime').classList.add('alert-secondary');
+      
+      // カレンダーを準備状態にする
+      const calendarBody = document.getElementById('calendarBody');
+      if (selectedMenus.length > 0) {
+        const requiredDuration = Math.max(...selectedMenus.map(menu => menu.duration));
+        calendarBody.innerHTML = `
+          <tr>
+            <td colspan="8" class="text-center text-primary">
+              <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+              選択したメニュー（${requiredDuration}分）に合わせて予約可能時間を更新中...
+            </td>
+          </tr>
+        `;
+        
+        // 少し遅延させてカレンダー更新（ユーザーがローディング状態を認識できるよう）
+        setTimeout(() => updateCalendar(), 300);
+      } else {
+        calendarBody.innerHTML = `
+          <tr>
+            <td colspan="8" class="text-center text-warning">
+              <i class="bi bi-exclamation-triangle me-2"></i>
+              メニューを選択すると予約可能な時間枠が表示されます
+            </td>
+          </tr>
+        `;
+        // メニューが選択されていない場合は送信ボタンを無効化
+        document.getElementById('submitBtn').disabled = true;
+      }
+    });
+  });
+}
+
+/**
+ * 選択メニューの中で最長の所要時間を計算して表示
+ */
+function updateTotalDuration() {
+  const totalDurationElement = document.getElementById('totalDuration');
+  if (!totalDurationElement) return; // 要素がなければ何もしない
+  
+  let maxDuration = 0;
+  
+  // 選択されたメニューの中で最長の所要時間を取得
+  selectedMenus.forEach(menu => {
+    if (menu.duration > maxDuration) {
+      maxDuration = menu.duration;
+    }
+  });
+  
+  // 所要時間を表示
+  if (maxDuration > 0) {
+    totalDurationElement.textContent = `${maxDuration}分`;
+    totalDurationElement.style.color = '#0d6efd';
+  } else {
+    totalDurationElement.textContent = '0分';
+    totalDurationElement.style.color = '#6c757d';
+  }
+}
+
+/**
+ * 合計金額を計算して表示
+ */
+function updateTotalPrice() {
+  const totalPriceElement = document.getElementById('totalPrice');
+  let total = 0;
+  
+  // 選択されたメニューの価格を合計
+  selectedMenus.forEach(menu => {
+    total += menu.price;
+  });
+  
+  // 合計金額を表示
+  totalPriceElement.textContent = `${total.toLocaleString()}円`;
+  
+  // 合計金額が0円の場合と金額がある場合でスタイルを変更
+  if (total === 0) {
+    totalPriceElement.style.color = '#6c757d';
+  } else {
+    totalPriceElement.style.color = '#0d6efd';
+  }
+}
+
+/**
+ * フォームの入力状態をチェックし、送信ボタンの有効/無効を切り替える
+ */
+function validateForm() {
+  const submitBtn = document.getElementById('submitBtn');
+  const dateSelected = document.getElementById('selectedDate').value !== '';
+  const timeSelected = document.getElementById('selectedTime').value !== '';
+  const menuSelected = selectedMenus.length > 0;
+  
+  // スタッフ選択を除外し、条件を変更
+  submitBtn.disabled = !(dateSelected && timeSelected && menuSelected);
+}
+
+/**
+ * イベントリスナーを設定する
+ */
+function setupEventListeners() {
+  // タブ切り替え時に予約一覧を読み込む
+  document.getElementById('list-tab').addEventListener('click', loadReservations);
+
+  // 週移動ボタンのクリックイベント
+  document.getElementById('prevWeek').addEventListener('click', () => navigateWeek(-7));
+  document.getElementById('nextWeek').addEventListener('click', () => navigateWeek(7));
+
+  // 予約フォームの送信イベント
+  document.getElementById('reservationForm').addEventListener('submit', handleFormSubmit);
+}
+
+/**
+ * 表示する週を移動する - 本日から1週間バージョン
+ * @param {number} days - 移動する日数 (-7で前の週, 7で次の週)
+ */
+function navigateWeek(days) {
+  const newWeekStart = new Date(currentWeekStart);
+  newWeekStart.setDate(newWeekStart.getDate() + days);
+
+  // 前の週への移動制限: 本日より前にはならないようにする
+  if (days < 0) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (newWeekStart < today) return;
+  }
+  
+  // 次の週への移動制限: 予約可能終了日を超えないようにする
+  if (days > 0) {
+    const newWeekEnd = new Date(newWeekStart);
+    newWeekEnd.setDate(newWeekStart.getDate() + 6);
+    if (newWeekEnd > endDate) return;
+  }
+
+  currentWeekStart = newWeekStart; // 現在の週を更新
+  
+  // メニューが選択されている場合のみカレンダーを更新
+  if (selectedMenus.length > 0) {
+    updateCalendar(); // カレンダーを再描画
+  } else {
+    // メニューが選択されていない場合は、週の表示のみ更新
+    updateWeekNavigation();
+  }
+}
+
+/**
+ * カレンダー表示を更新する関数も修正 - 本日から1週間バージョン
+ */
+function updateCalendar() {
+  // メニューが未選択の場合は更新しない
+  if (selectedMenus.length === 0) {
+    const calendarBody = document.getElementById('calendarBody');
+    calendarBody.innerHTML = `
+      <tr>
+        <td colspan="8" class="text-center text-warning">
+          <i class="bi bi-exclamation-triangle me-2"></i>
+          メニューを選択すると予約可能な時間枠が表示されます
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  showLoading(true); // ローディング表示開始
+  updateWeekNavigation(); // 週ナビゲーションボタンの状態を更新
+
+  try {
+    // 選択されているメニューから最長の所要時間を取得
+    const requiredDuration = Math.max(...selectedMenus.map(menu => menu.duration));
+    
+    // メッセージにも所要時間を表示
+    document.getElementById('loadingIndicator').innerHTML = `
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      所要時間${requiredDuration}分のメニューで予約可能な時間を確認中...
+    `;
+    
+    // デバッグ情報を表示
+    console.log("予約可能時間を取得中:", {
+      weekStart: formatDate(currentWeekStart),
+      requiredDuration: requiredDuration
+    });
+    
+    // サーバーサイド(GAS)のgetWeeklyAvailability関数を呼び出す
+    google.script.run
+      .withSuccessHandler(handleAvailabilitySuccess) // 成功時のコールバック
+      .withFailureHandler(function(error) {
+        console.error('カレンダーデータ取得エラー:', error);
+        handleAvailabilityFailure(error);
+      })
+      .getWeeklyAvailability(
+        formatDate(currentWeekStart),  // 週の開始日（本日）
+        requiredDuration               // 必要な時間枠の長さ（分）
+      ); 
+  } catch (error) {
+    console.error('カレンダー更新処理でエラー:', error);
+    handleAvailabilityFailure('クライアント側でのエラー: ' + error.message);
+  }
+}
+
+/**
+ * 空き状況取得成功時のコールバック関数
+ * @param {Array<object>} weekData - サーバーから返された週の空き状況データ
+ */
+function handleAvailabilitySuccess(weekData) {
+   console.log('予約状況データ取得成功:', weekData);
+   // データ形式の基本的なチェック
+   if (!weekData || !Array.isArray(weekData)) {
+     console.error('サーバーから受信したデータ形式が無効です:', weekData);
+     handleAvailabilityFailure('無効なデータ形式'); // エラー処理へ
+     return;
+   }
+   renderCalendar(weekData); // カレンダーを描画
+   showLoading(false); // ローディング表示終了
+}
+
+/**
+ * 空き状況取得失敗時のコールバック関数
+ * @param {Error|string} error - エラーオブジェクトまたはエラーメッセージ
+ */
+function handleAvailabilityFailure(error) {
+  console.error('予約状況データの取得に失敗しました:', error);
+  // カレンダー表示部分にエラーメッセージを表示
+  document.getElementById('calendarBody').innerHTML =
+    `<tr><td colspan="8" class="text-center text-danger">カレンダー情報の取得に失敗しました。時間をおいて再度お試しください。</td></tr>`;
+  showLoading(false); // ローディング表示終了
+  // フォーム下部にもエラーメッセージを表示
+  displayMessage('result', '<i class="bi bi-exclamation-triangle me-2"></i>カレンダー情報の取得に失敗しました。ページを再読み込みするか、時間をおいて再度お試しください。', 'danger');
+}
+
+/**
+ * 受け取ったデータをもとにカレンダーを描画する
+ * @param {Array<object>} weekData - 週の空き状況データ
+ */
+function renderCalendar(weekData) {
+  updateCalendarHeader(); // ヘッダー（日付と曜日）を更新
+  const calendarBody = document.getElementById('calendarBody');
+  calendarBody.innerHTML = ''; // 現在のカレンダー内容をクリア
+
+  // 選択されたメニューの所要時間を表示するメッセージを追加
+  const requiredDuration = Math.max(...selectedMenus.map(menu => menu.duration));
+  const messageRow = document.createElement('tr');
+  messageRow.innerHTML = `
+    <td colspan="8" class="text-center text-info small py-2">
+      <i class="bi bi-info-circle me-2"></i>
+      現在、所要時間 <strong>${requiredDuration}分</strong> のメニューで利用可能な時間枠を表示しています
+    </td>
+  `;
+  calendarBody.appendChild(messageRow);
+
+  // 営業時間の定数
+  const businessStartHour = businessHours.START;  
+  const businessEndHour = businessHours.END;
+  const timeInterval = businessHours.TIME_INTERVAL;
+
+  // 利用可能な時間枠があるかどうかのフラグ
+  let hasAvailableSlots = false;
+
+  // デバッグ用コード - weekDataの内容をコンソールに出力
+  console.log("週データ:", JSON.parse(JSON.stringify(weekData)));
+
+  for (let h = businessStartHour; h < businessEndHour; h++) {
+    for (let m = 0; m < 60; m += timeInterval) {
+      const timeString = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      
+      // 各時間帯の行を作成して追加
+      const row = createTimeSlotRow(timeString, weekData);
+      calendarBody.appendChild(row);
+
+      // 利用可能な時間枠があるかチェック
+      const availableSlots = row.querySelectorAll('.time-slot.available');
+      if (availableSlots.length > 0) {
+        hasAvailableSlots = true;
+      }
+    }
+  }
+
+  // デバッグ情報を追加
+  if (!hasAvailableSlots) {
+    console.log("利用可能な時間枠が見つかりませんでした。サーバーからのデータ:", weekData);
+
+    // 各日のデータを調査
+    let debugInfo = "";
+    weekData.forEach((day, index) => {
+      if (day && !day.isHoliday && day.hours) {
+        const availableHours = day.hours.filter(h => h.available > 0 && h.durationAvailable === true);
+        debugInfo += `${day.date}: ${availableHours.length}個の有効時間枠\n`;
+      }
+    });
+    console.log("日ごとの利用可能時間枠:", debugInfo);
+  }
+
+  // 利用可能な時間枠がない場合はメッセージを表示
+  if (!hasAvailableSlots) {
+    const noSlotsRow = document.createElement('tr');
+    noSlotsRow.innerHTML = `
+      <td colspan="8" class="text-center text-warning py-3">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        選択したメニュー(${requiredDuration}分)で予約可能な時間枠がありません。
+        <br>他のメニューや別の週をお試しください。
+      </td>
+    `;
+    calendarBody.appendChild(noSlotsRow);
+  }
+}
+
+/**
+ * カレンダーのヘッダー（日付と曜日）を更新する - 本日からの1週間バージョン
+ */
+function updateCalendarHeader() {
+  const daysRow = document.getElementById('daysRow');
+  daysRow.innerHTML = '<th class="time-header">時間</th>'; // 時間列のヘッダー
+
+  const daysJP = ['日', '月', '火', '水', '木', '金', '土']; // 曜日の日本語表記
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(currentWeekStart);
+    date.setDate(date.getDate() + i); // 表示週の開始日（本日）からi日後の日付
+    const dayOfWeek = date.getDay(); // 曜日番号 (0=日, 6=土)
+    const isSunday = dayOfWeek === 0;
+    const isSaturday = dayOfWeek === 6;
+    
+    // 今日の日付かどうかを確認
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const currentDate = new Date(date);
+    currentDate.setHours(0, 0, 0, 0);
+    const isToday = currentDate.getTime() === today.getTime();
+
+    const th = document.createElement('th');
+    // 日曜日と土曜日でクラスを付与して色付け、今日の日付にも特別クラスを付与
+    th.className = `day-header ${isSunday ? 'sunday' : ''} ${isSaturday ? 'saturday' : ''} ${isToday ? 'today' : ''}`;
+    
+    // 今日の場合は「今日」という表記を追加
+    const todayMark = isToday ? '<span class="badge bg-warning text-dark">今日</span><br>' : '';
+    th.innerHTML = `${todayMark}${formatDateMMDD(date)}<br>(${daysJP[dayOfWeek]})`; // MM/DD (曜) 形式で表示
+    
+    daysRow.appendChild(th);
+  }
+}
+
+/**
+ * 特定の時間帯のカレンダー行（全曜日分）を作成する - 修正版
+ * メニューの所要時間を考慮して利用可能なスロットのみ選択可能にする
+ * @param {string} timeString - 時間 (HH:MM形式)
+ * @param {Array<object>} weekData - 週の空き状況データ
+ * @return {HTMLTableRowElement} - 作成されたテーブル行要素
+ */
+function createTimeSlotRow(timeString, weekData) {
+  const row = document.createElement('tr');
+
+  // 時間セルを作成
+  const timeCell = document.createElement('td');
+  timeCell.className = 'time-header';
+  timeCell.textContent = timeString;
+  row.appendChild(timeCell);
+
+  // 各曜日のセルを作成 (7日分)
+  for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+    const cell = document.createElement('td');
+    const dayData = weekData[dayIndex]; // その曜日のデータ
+
+    if (!dayData) {
+       // データが存在しない場合（エラーケース）
+       cell.innerHTML = '-';
+       cell.classList.add('unavailable'); // 予約不可として表示
+    } else if (dayData.isHoliday) {
+      // 定休日の場合
+      cell.classList.add('holiday-cell'); // 定休日用のスタイル
+      cell.innerHTML = '<span class="holiday-text">-</span>'; // シンプルにハイフン表示
+    } else {
+      // 営業日の場合、時間帯データを検索
+      const hourData = dayData.hours ? dayData.hours.find(h => h.time === timeString) : null;
+      const slotDiv = document.createElement('div'); // 時間枠表示用のdiv
+      slotDiv.classList.add('time-slot'); // 基本スタイル
+
+      // デバッグ用コンソール出力
+      if (hourData) {
+        console.log(`時間枠データ確認: ${dayData.date} ${timeString}`, hourData);
+      }
+
+      // 予約可能かどうかを確認（所要時間を考慮）
+      if (hourData && hourData.available > 0 && hourData.durationAvailable === true) {
+        // 予約可能な場合
+        slotDiv.classList.add('available');
+        slotDiv.textContent = '◯';
+        slotDiv.dataset.date = dayData.date;
+        slotDiv.dataset.time = timeString;
+        slotDiv.addEventListener('click', () => selectTimeSlot(slotDiv));
+        
+        // ツールチップを追加（選択可能である理由を表示）
+        slotDiv.title = `${timeString}から予約可能です (所要時間: ${Math.max(...selectedMenus.map(menu => menu.duration))}分)`;
+      } else {
+        // 予約不可の場合
+        slotDiv.classList.add('unavailable');
+        slotDiv.textContent = '×';
+        slotDiv.style.textDecoration = 'none';
+        
+        // ツールチップを追加（予約不可である理由を表示）
+        if (hourData) {
+          // hourDataがnullでない場合のみデバッグ情報を表示
+          let reason = "この時間枠は予約できません";
+          if (hourData.available <= 0) {
+            reason = "この時間枠は既に予約が入っています";
+          } else if (hourData.durationAvailable === false) {
+            reason = `この時間枠は${Math.max(...selectedMenus.map(menu => menu.duration))}分の予約が入りません`;
+          }
+          slotDiv.title = reason;
+        } else {
+          slotDiv.title = "この時間枠の情報がありません";
+        }
+      }
+      cell.appendChild(slotDiv); // セルに時間枠divを追加
+    }
+    row.appendChild(cell); // 行にセルを追加
+  }
+  return row;
+}
+
+/**
+ * タイムスロットがクリックされたときの処理（改良版）
+ * @param {HTMLDivElement} element - クリックされた時間枠のdiv要素
+ */
+function selectTimeSlot(element) {
+  // 他の選択済み要素があれば選択解除
+  const previouslySelected = document.querySelector('.time-slot.selected');
+  if (previouslySelected) {
+    previouslySelected.classList.remove('selected');
+  }
+
+  // クリックされた要素を選択状態にする
+  element.classList.add('selected');
+
+  // 選択されている日時をフォームの隠しフィールドに設定
+  const date = element.dataset.date;
+  const time = element.dataset.time;
+  document.getElementById('selectedDate').value = date;
+  document.getElementById('selectedTime').value = time;
+
+  // 最長の所要時間から終了時刻を計算
+  const maxDuration = Math.max(...selectedMenus.map(menu => menu.duration));
+  const startDateTime = new Date(date + 'T' + time);
+  const endDateTime = new Date(startDateTime.getTime() + maxDuration * 60000);
+  const endTimeStr = `${String(endDateTime.getHours()).padStart(2, '0')}:${String(endDateTime.getMinutes()).padStart(2, '0')}`;
+
+  // 選択されている日時を表示エリアにフォーマットして表示（開始時間～終了時間を表示）
+  const displayDate = formatDateWithDayJP(new Date(date + 'T' + time + ':00'));
+  document.getElementById('selectedDateTime').textContent = `${displayDate} ${time}～${endTimeStr}`;
+  document.getElementById('selectedDateTime').classList.remove('alert-secondary');
+  document.getElementById('selectedDateTime').classList.add('alert-info');
+
+  // フォームの入力状態をチェック
+  validateForm();
+
+  // 予約確定ボタンに自動スクロール
+  document.getElementById('submitBtn').scrollIntoView({ behavior: 'smooth' });
+}
+
+/**
+ * 予約フォーム送信時の処理（モーダル表示版）- 修正版
+ * @param {Event} e - 送信イベント
+ */
+function handleFormSubmit(e) {
+  e.preventDefault(); // フォームの通常の送信動作をキャンセル
+
+  const submitBtn = document.getElementById('submitBtn');
+  const resultDiv = document.getElementById('result');
+  resultDiv.innerHTML = ''; // 前回の結果メッセージをクリア
+
+  // --- 入力チェック ---
+  if (selectedMenus.length === 0) {
+    displayMessage('result', '<i class="bi bi-exclamation-triangle me-2"></i>メニューを1つ以上選択してください。', 'warning');
+    return;
+  }
+  
+  if (!document.getElementById('selectedDate').value || !document.getElementById('selectedTime').value) {
+    displayMessage('result', '<i class="bi bi-exclamation-triangle me-2"></i>予約日時を選択してください。', 'warning');
+    return;
+  }
+  // --- 入力チェックここまで ---
+
+  // 予約内容の確認メッセージを作成
+  const menuNames = selectedMenus.map(menu => menu.name).join('、');
+  const totalPrice = selectedMenus.reduce((sum, menu) => sum + menu.price, 0);
+  
+  // 最長の所要時間を計算
+  let maxDuration = 0;
+  selectedMenus.forEach(menu => {
+    if (menu.duration > maxDuration) {
+      maxDuration = menu.duration;
+    }
+  });
+  
+  const dateValue = document.getElementById('selectedDate').value;
+  const timeValue = document.getElementById('selectedTime').value;
+  
+  // 終了時間を計算して表示
+  const startDateTime = new Date(dateValue + 'T' + timeValue);
+  const endDateTime = new Date(startDateTime.getTime() + maxDuration * 60000);
+  const endTimeStr = `${String(endDateTime.getHours()).padStart(2, '0')}:${String(endDateTime.getMinutes()).padStart(2, '0')}`;
+  
+  const displayDate = formatDateWithDayJP(new Date(dateValue + 'T' + timeValue + ':00'));
+  
+  // モーダルに予約情報を設定
+  document.getElementById('confirmDate').textContent = displayDate;
+  document.getElementById('confirmTime').textContent = `${timeValue} 〜 ${endTimeStr}`;
+  document.getElementById('confirmMenu').textContent = menuNames;
+  document.getElementById('confirmDuration').textContent = `${maxDuration}分`;
+  document.getElementById('confirmPrice').textContent = `${totalPrice.toLocaleString()}円`;
+  
+  // モーダルを表示
+  const confirmationModal = new bootstrap.Modal(document.getElementById('confirmationModal'));
+  confirmationModal.show();
+  
+  // モーダルの「予約を確定する」ボタンのイベント登録
+  // 既存のイベントリスナーを削除してから追加（二重登録防止）
+  const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+  const newModalConfirmBtn = modalConfirmBtn.cloneNode(true);
+  modalConfirmBtn.parentNode.replaceChild(newModalConfirmBtn, modalConfirmBtn);
+  
+  newModalConfirmBtn.addEventListener('click', function() {
+    // モーダルを閉じる
+    confirmationModal.hide();
+    
+    // 送信処理開始 - 終了時間も送信
+    submitReservation({
+      userId: userId,
+      menus: selectedMenus.map(menu => menu.id),
+      menuNames: selectedMenus.map(menu => menu.name),
+      durations: selectedMenus.map(menu => menu.duration),
+      maxDuration: maxDuration,
+      totalPrice: totalPrice,
+      staff: "none",
+      date: dateValue,
+      time: timeValue,
+      endTime: endTimeStr  // 終了時間を追加
+    });
+  });
+}
+
+/**
+ * 予約データを送信し、サーバー処理を実行する
+ * @param {Object} formData - 送信する予約データ
+ */
+function submitReservation(formData) {
+  const submitBtn = document.getElementById('submitBtn');
+  const resultDiv = document.getElementById('result');
+  
+  // 結果表示エリアをクリア
+  resultDiv.innerHTML = '';
+  
+  // 送信ボタンを無効化し、スピナーを表示
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = `
+    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> 
+    処理中...
+  `;
+
+  // デバッグ用のログ出力（本番環境では必要に応じて削除）
+  console.log('予約データ送信:', JSON.parse(JSON.stringify(formData)));
+
+  // サーバーサイド(GAS)のcreateReservation関数を呼び出す
+  google.script.run
+    .withSuccessHandler(result => {
+      // ボタンの状態を元に戻す
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="bi bi-calendar-check me-2"></i>予約を確定する';
+      
+      // 成功ハンドラに渡す
+      handleReservationSuccess(result);
+    })
+    .withFailureHandler(error => {
+      // ボタンの状態を元に戻す
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="bi bi-calendar-check me-2"></i>予約を確定する';
+      
+      // 失敗ハンドラに渡す
+      handleReservationFailure(error);
+    })
+    .createReservation(formData); // フォームデータを渡す
+}
+
+/**
+ * 予約作成成功時のコールバック関数（オーバーレイ表示版）
+ * @param {object} result - サーバーから返された結果オブジェクト { success: boolean, message: string, ... }
+ */
+function handleReservationSuccess(result) {
+  console.log('予約結果:', result);
+  const submitBtn = document.getElementById('submitBtn');
+  submitBtn.innerHTML = '<i class="bi bi-calendar-check me-2"></i>予約を確定する'; // ボタンのテキストを元に戻す
+
+  if (result.success) {
+    // result要素の内容をクリア
+    document.getElementById('result').innerHTML = '';
+    
+    // 既存のsuccessActionsを非表示に
+    const existingSuccessActions = document.getElementById('successActions');
+    if (existingSuccessActions) {
+      existingSuccessActions.style.display = 'none';
+    }
+    
+    // オーバーレイを作成
+    const overlay = document.createElement('div');
+    overlay.className = 'completion-overlay';
+    overlay.style.position = 'fixed';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.width = '100%';
+    overlay.style.height = '100%';
+    overlay.style.backgroundColor = 'rgba(0,0,0,0.7)';
+    overlay.style.display = 'flex';
+    overlay.style.justifyContent = 'center';
+    overlay.style.alignItems = 'center';
+    overlay.style.zIndex = '9999';
+    
+    // 完了メッセージコンテナ
+    const messageContainer = document.createElement('div');
+    messageContainer.className = 'completion-message';
+    messageContainer.style.backgroundColor = 'white';
+    messageContainer.style.borderRadius = '12px';
+    messageContainer.style.padding = '30px';
+    messageContainer.style.maxWidth = '90%';
+    messageContainer.style.width = '600px';
+    messageContainer.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
+    messageContainer.style.textAlign = 'center';
+    messageContainer.style.borderLeft = '8px solid #4CAF50';
+    
+    // メッセージ内容
+    messageContainer.innerHTML = `
+        <span class="bi bi-check-circle-fill text-success" style="font-size: 80px; display: block; margin: 0 auto; animation: checkmark-circle 0.5s ease-in-out;"></span>
+          <h3 style="font-size: 48px; color: #2E7D32; margin: 15px 0; font-weight: bold;" class="fade-in">予約完了！</h3>
+      <p style="font-size: 32px; color: #555; margin-bottom: 25px;" class="fade-in">ご予約ありがとうございます。当日のご来店をお待ちしております。</p>
+      <div class="alert alert-success" style="font-size: 28px;">
+        <i class="bi bi-envelope me-2"></i>予約確定メッセージが送信されました。
+      </div>
+      <div class="next-steps" style="display: flex; justify-content: center; gap: 20px; margin-top: 25px;">
+        <button class="btn btn-outline-primary" id="newReservationBtnOverlay" style="font-size: 30px; padding: 12px 25px; border-radius: 8px;">
+          <i class="bi bi-plus-circle me-2"></i>新しい予約を作成
+        </button>
+        <button class="btn btn-outline-secondary" id="viewReservationsBtnOverlay" style="font-size: 30px; padding: 12px 25px; border-radius: 8px;">
+          <i class="bi bi-list-ul me-2"></i>予約一覧を表示
+        </button>
+      </div>
+    `;
+    
+    // アニメーション用のスタイルを追加
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes checkmark-circle {
+        0% { transform: scale(0); opacity: 0; }
+        50% { transform: scale(1.1); opacity: 1; }
+        100% { transform: scale(1); opacity: 1; }
+      }
+      .fade-in {
+        opacity: 0;
+        animation: fadeIn ease 1s forwards;
+      }
+      @keyframes fadeIn {
+        0% { opacity: 0; }
+        100% { opacity: 1; }
+      }
+    `;
+    document.head.appendChild(style);
+    
+    // オーバーレイにメッセージを追加
+    overlay.appendChild(messageContainer);
+    document.body.appendChild(overlay);
+    
+    // ボタンイベントの設定
+    document.getElementById('newReservationBtnOverlay').addEventListener('click', function() {
+      resetReservationForm();
+      document.body.removeChild(overlay);
+    });
+    
+    document.getElementById('viewReservationsBtnOverlay').addEventListener('click', function() {
+      resetReservationForm();
+      document.body.removeChild(overlay);
+      // 予約一覧タブをクリック
+      document.getElementById('list-tab').click();
+    });
+    
+    // フォームの内容をリセット
+    resetReservationForm();
+    
+  } else {
+    // 失敗メッセージを表示 (例: 予約上限、競合など)
+    displayMessage('result', `<i class="bi bi-exclamation-triangle me-2"></i>${result.message}`, 'danger');
+    submitBtn.disabled = false; // 失敗時はボタンを再度有効化
+  }
+}
+
+/**
+ * 予約フォームをリセットする
+ */
+function resetReservationForm() {
+  document.getElementById('reservationForm').reset();
+  
+  // 選択日時表示をリセット
+  document.getElementById('selectedDateTime').textContent = '日時を選択してください';
+  document.getElementById('selectedDateTime').classList.remove('alert-info');
+  document.getElementById('selectedDateTime').classList.add('alert-secondary');
+  
+  // カレンダーの選択状態を解除
+  const previouslySelected = document.querySelector('.time-slot.selected');
+  if (previouslySelected) {
+    previouslySelected.classList.remove('selected');
+  }
+  
+  // メニュー選択をリセット
+  selectedMenus = [];
+  document.querySelectorAll('.menu-checkbox').forEach(checkbox => {
+    checkbox.checked = false;
+  });
+  updateTotalPrice(); // 合計金額表示を更新
+  updateTotalDuration(); // 所要時間表示を更新
+  
+  // 予約確定ボタンを再度無効化
+  document.getElementById('submitBtn').disabled = true;
+  
+  // カレンダーボディにメニュー選択を促すメッセージを表示
+  const calendarBody = document.getElementById('calendarBody');
+  calendarBody.innerHTML = `
+    <tr>
+      <td colspan="8" class="text-center text-warning">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        メニューを選択すると予約可能な時間枠が表示されます
+      </td>
+    </tr>
+  `;
+}
+
+/**
+ * 予約作成失敗時のコールバック関数（改良版）
+ * @param {Error|string} error - エラーオブジェクトまたはメッセージ
+ */
+function handleReservationFailure(error) {
+  console.error('予約失敗:', error);
+  const submitBtn = document.getElementById('submitBtn');
+  submitBtn.disabled = false; // ボタンを再度有効化
+  submitBtn.innerHTML = '<i class="bi bi-calendar-check me-2"></i>予約を確定する';
+  
+  // エラーメッセージを表示（アイコン付き）
+  displayMessage('result', `
+    <div class="d-flex align-items-center">
+      <i class="bi bi-exclamation-circle-fill text-danger me-3 fs-4"></i>
+      <div>
+        <strong>予約処理中にエラーが発生しました。</strong><br>
+        時間をおいて再度お試しいただくか、別の日時をお選びください。
+      </div>
+    </div>
+  `, 'danger');
+  
+  // エラーメッセージまでスクロール
+  document.getElementById('result').scrollIntoView({ behavior: 'smooth' });
+}
+
+/**
+ * 予約一覧タブがクリックされたときに予約情報を読み込んで表示する
+ */
+function loadReservations() {
+  const listDiv = document.getElementById('reservationsList');
+  const cancelResultDiv = document.getElementById('cancelResult');
+  cancelResultDiv.innerHTML = ''; // 前回のキャンセル結果メッセージをクリア
+  // ローディング表示
+  listDiv.innerHTML = `
+    <div class="text-center">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p>予約情報を読み込み中...</p>
+    </div>`;
+
+  // サーバーサイド(GAS)のgetUserReservations関数を呼び出す
+  google.script.run
+    .withSuccessHandler(renderReservations) // 成功時コールバック
+    .withFailureHandler(error => { // 失敗時コールバック
+      console.error('予約一覧の取得に失敗しました:', error);
+      listDiv.innerHTML = `<div class="alert alert-danger">予約情報の読み込みに失敗しました。</div>`;
+    })
+    .getUserReservations(userId); // ユーザーIDを渡す
+}
+
+/**
+ * 取得した予約情報をもとに一覧を描画する
+ * @param {Array<object>} reservations - 予約情報の配列
+ */
+function renderReservations(reservations) {
+  const listDiv = document.getElementById('reservationsList');
+  listDiv.innerHTML = ''; // 現在の内容をクリア
+
+  if (!reservations || reservations.length === 0) {
+    // 予約がない場合のメッセージを表示
+    listDiv.innerHTML = `
+      <div class="alert alert-info">
+        <i class="bi bi-calendar-x me-2"></i>現在、有効な予約はありません。
+      </div>`;
+    return;
+  }
+
+  // 予約を日付順にソート
+  reservations.sort((a, b) => {
+    const dateA = new Date(a.date + 'T' + a.time);
+    const dateB = new Date(b.date + 'T' + b.time);
+    return dateA - dateB;
+  });
+
+  // セクションヘッダーを追加
+  listDiv.innerHTML = `
+    <h5 class="border-bottom pb-2 mb-4">
+      <i class="bi bi-calendar-check me-2"></i>予約一覧
+      <span class="badge bg-primary ms-2">${reservations.length}件</span>
+    </h5>`;
+
+  // 各予約情報をリストアイテムとして追加
+  reservations.forEach((res, index) => {
+    // 予約情報の処理
+    let menuDisplay = '情報なし';
+    let totalPrice = 0;
+    
+    if (res.menus && res.menus.length > 0) {
+      // メニューが配列の場合（複数選択対応版）
+      const menuItems = res.menus.map(menuId => {
+        const menuItem = menuPlans.find(m => m.id === menuId);
+        if (menuItem) {
+          totalPrice += menuItem.price;
+          return menuItem.name;
+        }
+        return menuId;
+      });
+      menuDisplay = menuItems.join('、');
+    } else if (res.menu) {
+      // 従来の単一メニュー方式
+      const menu = menuPlans.find(m => m.id === res.menu);
+      if (menu) {
+        menuDisplay = menu.name;
+        totalPrice = menu.price;
+      } else {
+        menuDisplay = res.menu;
+      }
+    }
+    
+    // 日付をより読みやすくフォーマット
+    const dateObj = new Date(res.date + 'T' + res.time);
+    const formattedDate = formatDateWithDayJP(dateObj);
+    
+    // 今日の日付との比較のために日付オブジェクトを作成
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const reservationDate = new Date(res.date);
+    reservationDate.setHours(0, 0, 0, 0);
+    
+    // 予約日が今日かどうかをチェック
+    const isToday = reservationDate.getTime() === today.getTime();
+    
+    // 予約日が過去かどうかをチェック
+    const isPast = reservationDate < today;
+    
+    // 終了時間の表示（存在する場合）
+    const timeDisplay = res.endTime ? `${res.time} 〜 ${res.endTime}` : res.time;
+    
+    // カード要素を作成
+    const card = document.createElement('div');
+    card.className = `card mb-3 reservation-card ${isToday ? 'border-primary' : ''} ${isPast ? 'bg-light' : ''}`;
+    card.id = `reservation-${res.id}`;
+    
+    // カード内容を構築
+    card.innerHTML = `
+      <div class="card-header d-flex justify-content-between align-items-center ${isToday ? 'bg-primary text-white' : ''}">
+        <div>
+          ${isToday ? '<span class="badge bg-warning text-dark me-2">本日</span>' : ''}
+          <i class="bi bi-calendar-event me-2"></i>${formattedDate}
+        </div>
+        <small class="text-${isToday ? 'light' : 'muted'}">予約ID: ${res.id}</small>
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-12 col-md-6">
+            <h5 class="card-title">
+              <i class="bi bi-clock me-2"></i><strong>時間：</strong>${timeDisplay}
+            </h5>
+            <p class="card-text">
+              <i class="bi bi-list-check me-2"></i><strong>メニュー：</strong> ${menuDisplay}
+            </p>
+            ${totalPrice > 0 ? `<p class="card-text"><i class="bi bi-cash-coin me-2"></i><strong>金額：</strong> ${totalPrice.toLocaleString()}円</p>` : ''}
+          </div>
+          <div class="col-12 col-md-6 text-md-end mt-3 mt-md-0">
+            <button class="btn ${isPast ? 'btn-secondary disabled' : 'btn-outline-danger'} cancel-btn" 
+                    data-reservation-id="${res.id}" 
+                    ${isPast ? 'disabled' : ''}>
+              <i class="bi bi-x-circle me-2"></i>
+              <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+              ${isPast ? '予約期間終了' : 'キャンセルする'}
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    listDiv.appendChild(card);
+  });
+
+  // 各キャンセルボタンにクリックイベントリスナーを設定
+  listDiv.querySelectorAll('.cancel-btn').forEach(button => {
+    button.addEventListener('click', handleCancelButtonClick);
+  });
+  
+  // 確定キャンセルボタンにイベントリスナーを設定
+  document.getElementById('confirmCancelBtn').addEventListener('click', handleConfirmCancel);
+}
+
+/**
+ * キャンセルボタンがクリックされたときの処理（モーダルを表示）
+ * @param {Event} event - クリックイベント
+ */
+function handleCancelButtonClick(event) {
+  const button = event.currentTarget; // クリックされたボタン
+  const reservationId = button.dataset.reservationId; // data属性から予約IDを取得
+  const cancelResultDiv = document.getElementById('cancelResult');
+  cancelResultDiv.innerHTML = ''; // 前回のキャンセル結果メッセージをクリア
+  
+  // 予約カードから予約情報を取得
+  const card = button.closest('.reservation-card');
+  const dateTime = card.querySelector('.card-header div').textContent.trim() + ' ' + 
+                  card.querySelector('.card-title').textContent.trim();
+  const menuElement = card.querySelector('.card-text');
+  const menu = card.querySelector('.card-text').textContent.trim();
+  document.getElementById('modalReservationMenu').textContent = menu; // プレフィックスはHTML側で定義
+  
+  // モーダルに予約情報をセット
+  document.getElementById('modalReservationId').textContent = reservationId;
+  document.getElementById('modalReservationDateTime').textContent = dateTime;
+  document.getElementById('modalReservationMenu').textContent = menu;
+  
+  // 確定キャンセルボタンに予約IDをデータ属性としてセット
+  document.getElementById('confirmCancelBtn').dataset.reservationId = reservationId;
+  
+  // モーダルを表示
+  const cancelModal = new bootstrap.Modal(document.getElementById('cancelConfirmModal'));
+  cancelModal.show();
+}
+
+/**
+ * モーダルでキャンセル確定ボタンがクリックされたときの処理
+ * @param {Event} event - クリックイベント
+ */
+function handleConfirmCancel(event) {
+  const button = event.currentTarget; // クリックされたボタン
+  const reservationId = button.dataset.reservationId; // data属性から予約IDを取得
+  const cancelResultDiv = document.getElementById('cancelResult');
+  
+  // ボタンを「処理中」表示に変更
+  button.disabled = true;
+  const spinner = button.querySelector('.spinner-border');
+  spinner.classList.remove('d-none'); // スピナーを表示
+  
+  console.log(`キャンセル実行: ID=${reservationId}, User=${userId}`);
+  // サーバーサイド(GAS)のcancelReservation関数を呼び出す
+  google.script.run
+    .withSuccessHandler(result => {
+      // モーダルを閉じる
+      const cancelModal = bootstrap.Modal.getInstance(document.getElementById('cancelConfirmModal'));
+      cancelModal.hide();
+      
+      // キャンセル処理結果を反映
+      handleCancelSuccess(result, document.querySelector(`.cancel-btn[data-reservation-id="${reservationId}"]`));
+      
+      // ボタンを元に戻す
+      button.disabled = false;
+      spinner.classList.add('d-none');
+    })
+    .withFailureHandler(error => {
+      // モーダルを閉じる
+      const cancelModal = bootstrap.Modal.getInstance(document.getElementById('cancelConfirmModal'));
+      cancelModal.hide();
+      
+      // エラー処理
+      handleCancelFailure(error, document.querySelector(`.cancel-btn[data-reservation-id="${reservationId}"]`));
+      
+      // ボタンを元に戻す
+      button.disabled = false;
+      spinner.classList.add('d-none');
+    })
+    .cancelReservation(reservationId, userId); // 予約IDとユーザーIDを渡す
+}
+
+/**
+ * 予約キャンセル成功時のコールバック関数
+ * @param {object} result - サーバーからの結果 { success: boolean, message: string }
+ * @param {HTMLButtonElement} button - クリックされたキャンセルボタン
+ */
+function handleCancelSuccess(result, button) {
+  console.log('キャンセル結果:', result);
+
+  // キャンセル結果メッセージを表示
+  if (result.success) {
+    // 成功メッセージを表示（トースト通知としてスタイルを変更）
+    const toastHtml = `
+      <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+        <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+          <div class="toast-header bg-success text-white">
+            <i class="bi bi-check-circle me-2"></i>
+            <strong class="me-auto">予約キャンセル完了</strong>
+            <small>たった今</small>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+          </div>
+          <div class="toast-body">
+            ${result.message}
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', toastHtml);
+    
+    // 3秒後にトーストを自動的に閉じる
+    setTimeout(() => {
+      const toast = document.querySelector('.toast');
+      if (toast) {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 500);
+      }
+    }, 3000);
+    
+    // キャンセルされた予約カードにキャンセル済みの表示をする
+    const card = button.closest('.reservation-card');
+    card.classList.add('border-danger');
+    
+    // カードに取り消し線とキャンセル済みの表示を追加
+    const cardBody = card.querySelector('.card-body');
+    cardBody.style.opacity = '0.6';
+    cardBody.style.position = 'relative';
+    cardBody.insertAdjacentHTML('beforeend', `
+      <div class="position-absolute top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center">
+        <div class="badge bg-danger p-2 fs-6">キャンセル済み</div>
+      </div>
+    `);
+    
+    // ボタンを削除
+    button.remove();
+
+    // 新規予約タブのカレンダーを更新（メニューが選択されている場合のみ）
+    if (selectedMenus.length > 0) {
+      updateCalendar();
+    }
+  } else {
+    // 失敗した場合（例: すでにキャンセル済み、権限なしなど）
+    displayMessage('cancelResult', result.message, 'danger');
+  }
+}
+
+/**
+ * 予約キャンセル失敗時のコールバック関数
+ * @param {Error|string} error - エラーオブジェクトまたはメッセージ
+ * @param {HTMLButtonElement} button - クリックされたキャンセルボタン
+ */
+function handleCancelFailure(error, button) {
+  console.error('キャンセルエラー:', error);
+  // エラーメッセージを表示
+  displayMessage('cancelResult', `
+    <div class="d-flex align-items-center">
+      <i class="bi bi-exclamation-triangle-fill text-danger me-2 fs-4"></i>
+      <div>キャンセル処理中にエラーが発生しました。時間をおいて再度お試しください。</div>
+    </div>
+  `, 'danger');
+}
+
+/**
+ * 指定された日付が含まれる週の開始日（日曜日）を取得する
+ * @param {Date} d - 日付オブジェクト
+ * @return {Date} - 週の開始日（日曜日）のDateオブジェクト
+ */
+function getStartOfWeek(d) {
+  const date = new Date(d);
+  const day = date.getDay(); // 0 (日曜日) から 6 (土曜日)
+  const diff = date.getDate() - day; // 日曜日からの差分
+  return new Date(date.setDate(diff)); // 週の開始日を設定
+}
+
+/**
+ * DateオブジェクトをYYYY-MM-DD 形式の文字列にフォーマットする
+ * @param {Date} date - 日付オブジェクト
+ * @return {string} - フォーマットされた文字列 (無効な日付の場合は空文字)
+ */
+function formatDate(date) {
+  // Dateオブジェクトでない場合や無効な日付の場合は空文字を返す
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+  try {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0'); // 月は0から始まるため+1
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  } catch (error) {
+     console.error('formatDateでエラー:', error);
+     return '';
+  }
+}
+
+/**
+ * Dateオブジェクトを MM/DD 形式の文字列にフォーマットする
+ * @param {Date} date - 日付オブジェクト
+ * @return {string} - フォーマットされた文字列 (無効な日付の場合は空文字)
+ */
+function formatDateMMDD(date) {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+  const month = String(date.getMonth() + 1);
+  const day = String(date.getDate());
+  return `${month}/${day}`;
+}
+
+/**
+ * DateオブジェクトをYYYY年M月D日(曜) 形式の日本語文字列にフォーマットする
+ * @param {Date} date - 日付オブジェクト
+ * @return {string} - フォーマットされた文字列 (無効な日付の場合は空文字)
+ */
+function formatDateWithDayJP(date) {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const days = ['日', '月', '火', '水', '木', '金', '土'];
+  const dayName = days[date.getDay()];
+  return `${year}年${month}月${day}日(${dayName})`;
+}
+
+/**
+ * 週ナビゲーションボタン（前の週、次の週）の有効/無効状態と週表示を更新する - 本日から1週間バージョン
+ */
+function updateWeekNavigation() {
+  const prevWeekBtn = document.getElementById('prevWeek');
+  const nextWeekBtn = document.getElementById('nextWeek');
+  const currentWeekDiv = document.getElementById('currentWeek');
+
+  // 表示中の週の終了日を計算（開始日から7日後）
+  const weekEndDate = new Date(currentWeekStart);
+  weekEndDate.setDate(weekEndDate.getDate() + 6);
+
+  // 週表示エリア (MM/DD 〜 MM/DD) を更新
+  currentWeekDiv.textContent = `${formatDateMMDD(currentWeekStart)} 〜 ${formatDateMMDD(weekEndDate)}`;
+
+  // 「前の週」ボタン: 本日より前の週は無効化（現在表示中の週の開始日が本日より前ではないこと）
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // 時刻部分をリセット
+  
+  // 本日の日付との比較（前の週へのナビゲーションが本日より前の日付にならないようにする）
+  const previousWeekStart = new Date(currentWeekStart);
+  previousWeekStart.setDate(previousWeekStart.getDate() - 7); // 前の週の開始日
+  
+  prevWeekBtn.disabled = previousWeekStart < today;
+
+  // 「次の週」ボタン: 予約可能終了日を超える週は無効化
+  nextWeekBtn.disabled = weekEndDate >= endDate;
+}
+
+/**
+ * ローディングインジケーターの表示/非表示を切り替える
+ * @param {boolean} isLoading - trueなら表示、falseなら非表示
+ */
+function showLoading(isLoading) {
+  const indicator = document.getElementById('loadingIndicator');
+  const calendarBody = document.getElementById('calendarBody');
+  if (!indicator || !calendarBody) return; // 要素がない場合は何もしない
+
+  if (isLoading) {
+    indicator.style.display = 'block'; // インジケーター表示
+  } else {
+    indicator.style.display = 'none'; // インジケーター非表示
+  }
+}
+
+/**
+ * 指定されたIDの要素にメッセージを表示する（Bootstrap Alertを使用）
+ * @param {string} elementId - メッセージを表示する要素のID
+ * @param {string} message - 表示するメッセージ
+ * @param {string} [type='info'] - Alertのタイプ ('success', 'danger', 'warning', 'info')
+ */
+function displayMessage(elementId, message, type = 'info') {
+  const element = document.getElementById(elementId);
+  if (element) {
+    // BootstrapのAlertコンポーネントのHTMLを生成
+    element.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                        ${message}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                      </div>`;
+  }
+}
+</script>
+</body>
+</html>
