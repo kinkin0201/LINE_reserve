@@ -2,142 +2,460 @@
 <html>
 <head>
     <base target="_top">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
     <title>会員登録</title>
     <style>
-        body { padding: 15px; font-family: sans-serif; }
-        .form-container { max-width: 600px; margin: 0 auto; }
-        .required-mark { color: red; }
+        :root {
+            --primary-color: #0d6efd;
+            --secondary-color: #2c3e50;
+            --background-color: #f0f4f8;
+            --input-bg: #ffffff;
+            --input-border: #e0e0e0;
+        }
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: var(--background-color);
+        }
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            font-size: 32px;
+            color: var(--secondary-color);
+            line-height: 1.5;
+        }
+        .container-fluid {
+            padding: 30px 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .registration-wrapper {
+            width: 100%;
+            max-width: 900px;
+            background-color: white;
+            padding: 40px 30px;
+            margin: 0 auto;
+            box-shadow: 0 6px 10px rgba(0,0,0,0.1);
+            border-radius: 12px;
+        }
+        .registration-header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+        h2 {
+            color: var(--primary-color);
+            font-size: 4rem;
+            font-weight: 700;
+            margin-bottom: 15px;
+        }
+        .header-subtitle {
+            color: #6c757d;
+            font-size: 2rem;
+            margin: 0;
+        }
+        .form-control {
+            border: 1px solid var(--input-border);
+            background-color: var(--input-bg);
+            padding: 20px;
+            font-size: 3rem;
+            transition: all 0.3s ease;
+            border-radius: 0.5rem;
+            height: auto;
+            width: 100%;
+        }
+        input[type="date"]:invalid {
+           color: #6c757d;
+        }
+        .form-control:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.25rem rgba(52,152,219,0.25);
+        }
+        .form-label {
+            font-weight: 600;
+            color: var(--primary-color);
+            font-size: 3rem;
+            margin-bottom: 12px;
+            position: relative;
+            padding-left: 15px;
+            display: inline-block;
+        }
+        .form-label::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 6px;
+            height: 60%;
+            background-color: var(--primary-color);
+            border-radius: 3px;
+        }
+        .form-check-label {
+            font-size: 2rem;
+            color: var(--secondary-color);
+            font-weight: 500;
+            margin-left: 0.5em;
+        }
+        .required-mark {
+            color: #e74c3c;
+            font-size: 1.6rem;
+            margin-left: 5px;
+            vertical-align: super;
+        }
+        .form-text {
+            color: #6c757d;
+            font-size: 1.75rem;
+            margin-top: 0.5rem;
+        }
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+            padding: 20px;
+            font-size: 2.2rem;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            line-height: 1.5;
+            margin-top: 20px;
+        }
+        .btn-primary:hover:not(:disabled) {
+            background-color: #2980b9;
+            border-color: #2980b9;
+        }
+        .form-check {
+            display: flex;
+            align-items: center;
+        }
+        .form-check-input {
+            width: 1.5em;
+            height: 1.5em;
+            margin-top: 0;
+        }
+        .form-check-input:checked {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        .btn .spinner-border {
+            vertical-align: middle;
+            margin-right: 0.5em;
+            width: 1.5rem;
+            height: 1.5rem;
+        }
+        .modal-body p {
+            font-size: 1.8rem;
+            margin-bottom: 1rem;
+        }
+        .modal-body .small {
+            font-size: 1.5rem;
+        }
+        .modal-title {
+             font-size: 2.5rem;
+             color: var(--primary-color);
+        }
+        .modal-content {
+            border-radius: 1rem;
+            padding: 20px;
+        }
+        .d-flex.flex-wrap {
+            gap: 15px;
+        }
+        /* オーバーレイ用スタイル */
+        .page-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1060; /* モーダルより上 */
+            display: none;
+        }
+        /* 完了モーダル用の特別なスタイル */
+        .modal-static {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            max-width: 500px;
+            z-index: 1065; /* オーバーレイより上 */
+            display: none;
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 0 20px rgba(0,0,0,0.2);
+        }
+        @media (max-width: 768px) {
+            .registration-wrapper {
+                padding: 30px 20px;
+            }
+            h2 {
+                font-size: 3.5rem;
+            }
+            .form-label, .form-check-label, .form-control, .btn-primary {
+                font-size: 2rem;
+            }
+            .header-subtitle, .form-text, .required-mark {
+                font-size: 1.75rem;
+            }
+             .required-mark {
+                font-size: 1.5rem;
+             }
+             .modal-body p {
+                font-size: 1.7rem;
+             }
+             .modal-body .small {
+                font-size: 1.4rem;
+             }
+             .modal-title {
+                font-size: 2.2rem;
+             }
+        }
+        input[type="date"] {
+            line-height: normal;
+        }
+        input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+        input[type="date"]::-webkit-input-placeholder {
+            font-size: 2rem;
+        }
+        input[type="date"]::-moz-placeholder {
+             font-size: 2rem;
+             opacity: 1;
+        }
+        input[type="date"]:-ms-input-placeholder {
+              font-size: 2rem;
+        }
+        #result {
+            margin-top: 20px;
+        }
+        .alert {
+            font-size: 1.5rem;
+            border-radius: 0.5rem;
+            margin-top: 15px;
+        }
     </style>
 </head>
 <body>
-    <div class="container form-container">
-        <h2 class="mb-4">会員登録</h2>
-        <p class="mb-4">予約システムをご利用いただくには、会員登録が必要です。<br>以下のフォームに必要事項をご入力ください。</p>
-
-        <form id="registrationForm">
-            <input type="hidden" id="userId" name="userId" value="<?= userId ?>">
-
-            <div class="mb-3">
-                <label for="name" class="form-label">お名前 <span class="required-mark">*</span></label>
-                <input type="text" class="form-control" id="name" name="name" required>
+    <div class="container-fluid">
+        <div class="registration-wrapper">
+            <div class="registration-header">
+                <h2>会員登録</h2>
+                <p class="header-subtitle">予約システムの利用には会員登録が必要です</p>
             </div>
 
-            <div class="mb-3">
-                <label for="phone" class="form-label">電話番号 <span class="required-mark">*</span></label>
-                <input type="tel" class="form-control" id="phone" name="phone" 
-                       placeholder="例: 090-1234-5678" pattern="[0-9\-]+" required>
-                <div class="form-text">ハイフン（-）ありでご入力ください。</div>
-            </div>
+            <form id="registrationForm">
+                <input type="hidden" id="userId" name="userId" value="<?= userId ?>">
 
-            <div class="mb-3">
-                <label for="email" class="form-label">メールアドレス <span class="required-mark">*</span></label>
-                <input type="email" class="form-control" id="email" name="email" required>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label">性別 <span class="required-mark">*</span></label>
-                <div class="form-check">
-                    <input class="form-check-input" type="radio" name="gender" id="gender-male" value="男性" required>
-                    <label class="form-check-label" for="gender-male">男性</label>
+                <div class="mb-5">
+                    <label for="name" class="form-label">お名前 <span class="required-mark">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" placeholder="例：山田 太郎" required>
                 </div>
-                <div class="form-check">
-                    <input class="form-check-input" type="radio" name="gender" id="gender-female" value="女性">
-                    <label class="form-check-label" for="gender-female">女性</label>
+
+                <div class="mb-5">
+                    <label for="phone" class="form-label">電話番号 <span class="required-mark">*</span></label>
+                    <input type="tel" class="form-control" id="phone" name="phone"
+                           placeholder="例：09012345678" pattern="[0-9]{10,11}" required>
+                    <div class="form-text">ハイフンなしの半角数字でご入力ください</div>
                 </div>
-                <div class="form-check">
-                    <input class="form-check-input" type="radio" name="gender" id="gender-other" value="その他">
-                    <label class="form-check-label" for="gender-other">その他</label>
+
+                <div class="mb-5">
+                    <label for="email" class="form-label">メールアドレス <span class="required-mark">*</span></label>
+                    <input type="email" class="form-control" id="email" name="email" placeholder="例：sample@example.com" required>
                 </div>
-            </div>
 
-            <div class="mb-3">
-                <label for="birthdate" class="form-label">生年月日 <span class="required-mark">*</span></label>
-                <input type="date" class="form-control" id="birthdate" name="birthdate" required>
-            </div>
-
-            <div class="mb-4">
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="agree" required>
-                    <label class="form-check-label" for="agree">
-                        個人情報の取り扱いに同意します <span class="required-mark">*</span>
-                    </label>
+                <div class="mb-5">
+                    <label class="form-label">性別 <span class="required-mark">*</span></label>
+                    <div class="d-flex flex-wrap">
+                        <div class="form-check me-4">
+                            <input class="form-check-input" type="radio" name="gender" id="gender-male" value="男性" required>
+                            <label class="form-check-label" for="gender-male">男性</label>
+                        </div>
+                        <div class="form-check me-4">
+                            <input class="form-check-input" type="radio" name="gender" id="gender-female" value="女性">
+                            <label class="form-check-label" for="gender-female">女性</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="gender" id="gender-other" value="その他">
+                            <label class="form-check-label" for="gender-other">その他</label>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            <button type="submit" class="btn btn-primary w-100" id="submitBtn">登録する</button>
-        </form>
+                <div class="mb-5">
+                    <label for="birthdate" class="form-label">生年月日 <span class="required-mark">*</span></label>
+                    <input type="date" class="form-control" id="birthdate" name="birthdate" required max="2009-12-31">
+                </div>
 
-        <div id="result" class="mt-3"></div>
+                <!-- 知ったきっかけの質問を追加 -->
+                <div class="mb-5">
+                    <label for="referralSource" class="form-label">当ジムを知ったきっかけ</label>
+                    <select class="form-control" id="referralSource" name="referralSource">
+                      <option value="" selected>選択してください</option>
+                      <option value="インスタグラム">Instagram</option>
+                      <option value="友人紹介">友人・知人の紹介</option>
+                      <option value="ウェブ検索">Web検索</option>
+                      <option value="Googleマップ">Googleマップ</option>
+                      <option value="雑誌チラシ">雑誌・チラシ</option>
+                      <option value="通りがかり">通りがかり</option>
+                      <option value="その他">その他</option>
+                    </select>
+                </div>
+
+                <div class="mb-5">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="agree" required>
+                        <label class="form-check-label" for="agree">
+                            個人情報の取り扱いに同意します <span class="required-mark">*</span>
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100" id="submitBtn">登録する</button>
+            </form>
+
+            <div id="result"></div>
+        </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- 完了モーダル（通常のBootstrapモーダルではなくカスタム実装） -->
+    <div id="completionOverlay" class="page-overlay"></div>
+    <div id="completionDialog" class="modal-static">
+        <div class="p-4 text-center">
+            <h5 class="modal-title mb-4" style="color: var(--primary-color);">会員登録完了</h5>
+            <p class="mb-3">会員登録が完了しました。</p>
+            <p class="text-muted small">このページを閉じて、<br>LINEメニューから予約ページを開き、予約を行ってください。</p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('registrationForm').addEventListener('submit', function(e) {
+            const completionOverlay = document.getElementById('completionOverlay');
+            const completionDialog = document.getElementById('completionDialog');
+            const registrationForm = document.getElementById('registrationForm');
+            const submitBtn = document.getElementById('submitBtn');
+            const resultDiv = document.getElementById('result');
+
+            // フォーム送信処理
+            registrationForm.addEventListener('submit', function(e) {
                 e.preventDefault();
+                resultDiv.innerHTML = '';
 
-                const submitBtn = document.getElementById('submitBtn');
-                const resultDiv = document.getElementById('result');
-                resultDiv.innerHTML = ''; // 前回の結果をクリア
+                // バリデーション
+                const selectedGender = registrationForm.querySelector('input[name="gender"]:checked');
+                if (!selectedGender) {
+                    displayMessage('result', '性別を選択してください。', 'warning');
+                    return;
+                }
+                const agreeCheckbox = document.getElementById('agree');
+                if (!agreeCheckbox.checked) {
+                    displayMessage('result', '個人情報の取り扱いに同意してください。', 'warning');
+                    return;
+                }
 
-                // フォームデータを収集
+                // 生年月日のチェック
+                const birthdateInput = document.getElementById('birthdate');
+                const selectedDate = new Date(birthdateInput.value);
+                const maxDate = new Date('2009-12-31');
+                if (selectedDate > maxDate) {
+                    displayMessage('result', '生年月日は2010年より前の日付を選択してください。', 'warning');
+                    birthdateInput.focus();
+                    return;
+                }
+
                 const formData = {
                     userId: document.getElementById('userId').value,
                     name: document.getElementById('name').value,
                     phone: document.getElementById('phone').value,
                     email: document.getElementById('email').value,
-                    gender: document.querySelector('input[name="gender"]:checked') ? document.querySelector('input[name="gender"]:checked').value : '',
-                    birthdate: document.getElementById('birthdate').value
+                    gender: selectedGender.value,
+                    birthdate: birthdateInput.value,
+                    referralSource: document.getElementById('referralSource').value
                 };
 
-                // 簡単なバリデーション
-                if (!formData.gender) {
-                    displayMessage('result', '性別を選択してください。', 'warning');
-                    return;
-                }
-
-                // 送信ボタンを無効化＆処理中表示
                 submitBtn.disabled = true;
                 submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 登録中...`;
 
-                console.log('登録データ送信:', formData);
-
-                // Google Apps Scriptの関数を呼び出し
+                // Google Apps Script への接続
                 google.script.run
                     .withSuccessHandler(function(result) {
-                        console.log('登録結果:', result);
-                        submitBtn.innerHTML = '登録する'; // ボタンテキストを戻す
-
-                        if (result.success) {
-                            displayMessage('result', result.message + ' 予約ページに移動します...', 'success');
-                            // 登録成功後、少し待ってから予約ページにリダイレクト
-                            setTimeout(function() {
-                                // 現在のURLからパラメータを除去し、新しいuserIdで再アクセス
-                                const currentUrl = window.location.href.split('?')[0];
-                                window.top.location.href = currentUrl + '?userId=' + formData.userId;
-                            }, 2000); // 2秒後にリダイレクト
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = '登録する';
+                        if (result && result.success) {
+                            // 成功時、画面全体を操作不能にする
+                            showCompletionAndDisableInteraction();
+                            registrationForm.reset();
                         } else {
-                            displayMessage('result', result.message, 'danger');
-                            submitBtn.disabled = false; // 失敗時はボタンを再度有効化
+                            displayMessage('result', (result && result.message) ? result.message : '登録に失敗しました。', 'danger');
                         }
                     })
                     .withFailureHandler(function(error) {
-                        console.error('登録エラー:', error);
-                        submitBtn.disabled = false; // ボタンを再度有効化
+                        submitBtn.disabled = false;
                         submitBtn.innerHTML = '登録する';
                         displayMessage('result', '登録処理中にエラーが発生しました: ' + error.message, 'danger');
+                        console.error('GAS Failure:', error);
                     })
                     .registerUser(formData);
             });
+
+            // 完了画面を表示し、画面を操作不能にする関数
+            function showCompletionAndDisableInteraction() {
+                // オーバーレイとダイアログ表示
+                completionOverlay.style.display = 'block';
+                completionDialog.style.display = 'block';
+                
+                // 画面のスクロールを無効化
+                document.body.style.overflow = 'hidden';
+                
+                // すべてのインタラクティブ要素を無効化
+                disableAllInteractions();
+                
+                // LINEアプリ内の場合は数秒後に自動で閉じる
+                if (typeof liff !== 'undefined' && liff.isInClient()) {
+                    setTimeout(function() {
+                        liff.closeWindow();
+                    }, 3000); // 3秒後に自動で閉じる
+                }
+            }
+            
+            // すべてのインタラクティブ要素を無効化する関数
+            function disableAllInteractions() {
+                // フォーム要素を無効化
+                const inputs = document.querySelectorAll('input, button, select, textarea');
+                inputs.forEach(input => {
+                    input.disabled = true;
+                });
+                
+                // イベントリスナーを無効化するためのオーバーレイ
+                const eventBlocker = document.createElement('div');
+                eventBlocker.style.position = 'fixed';
+                eventBlocker.style.top = '0';
+                eventBlocker.style.left = '0';
+                eventBlocker.style.width = '100%';
+                eventBlocker.style.height = '100%';
+                eventBlocker.style.zIndex = '9999';
+                eventBlocker.style.touchAction = 'none';
+                eventBlocker.id = 'event-blocker';
+                
+                // タッチおよびマウスイベントを捕捉して何もしない
+                eventBlocker.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+                eventBlocker.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+                eventBlocker.addEventListener('touchend', e => e.preventDefault(), { passive: false });
+                eventBlocker.addEventListener('click', e => e.preventDefault(), { passive: false });
+                
+                document.body.appendChild(eventBlocker);
+            }
         });
 
-        // メッセージ表示関数
         function displayMessage(elementId, message, type = 'info') {
             const element = document.getElementById(elementId);
             if (element) {
-                element.innerHTML = `<div class="alert alert-${type}" role="alert">${message}</div>`;
+                element.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                                      ${message}
+                                      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                    </div>`;
             }
         }
     </script>
