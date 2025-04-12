@@ -17,7 +17,7 @@
 // ▼▼▼ 環境に合わせて設定してください ▼▼▼
 const LINE_ACCESS_TOKEN = PropertiesService.getScriptProperties().getProperty('LINE_ACCESS_TOKEN') || 'UYCsmsIdqFkjEZ5PwmZXAU4DbbCIktaTlernaiTx89sr0bngauN6mv+nN1kTSr4dsg8ip4nhX9jHVupm+ddVvrvNkJXxxLGdlUCuLVcr3TnBCNIVHaGWFahME9JH0Qz2ewRcMaK1CYiCZqf7m6y8KQdB04t89/1O/w1cDnyilFU='; // LINE Messaging APIのアクセストークン　【編集箇所】
 const CALENDAR_ID = PropertiesService.getScriptProperties().getProperty('CALENDAR_ID') || 'c_9d24918fa9b40d73dd51c600630ff38b2a96508a8bf5bb25029a89c91947a105@group.calendar.google.com'; // 予約管理用GoogleカレンダーID　　【編集箇所】
-const SPREADSHEET_ID = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID') || '1IGg9z1Oz3bRL54_M5-EPuYr9okCsk1YumUhkthiCZ2o'; // データベース用スプレッドシートID　　【編集箇所】
+const SPREADSHEET_ID = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID') || '1T14D5L9_o1qq41nING8eBS8CU8dH0PV7ZDvl2ZQxaic'; // データベース用スプレッドシートID　　【編集箇所】
 // ▲▲▲ 環境に合わせて設定してください ▲▲▲
 
 // シート名
@@ -1068,7 +1068,7 @@ function registerUser(userData) {
 
 /**
 * 新しい予約を作成する (クライアントサイドJSから呼び出される)
-* @param {object} reservationData - 予約情報 (userId, date, time)
+* @param {object} reservationData - 予約情報 (userId, date, time, notes)
 * @return {object} - { success: boolean, message: string, reservationInfo?: object }
 */
 function createReservation(reservationData) {
@@ -1161,7 +1161,7 @@ function createReservation(reservationData) {
 
    // --- 予約処理実行 ---
    // 予約ID生成
-   const reservationId = Utilities.formatDate(now, 'GMT+9', 'yyyyMMddHHmmss') + Math.random().toString(36).substring(2, 8);
+   const reservationId = Utilities.formatDate(now, 'GMT+9', 'MMddHHmmss') + Math.random().toString(36).substring(2, 8);
    
    // 固定の情報
    const trainingDescription = "パーソナルトレーニング";
@@ -1169,6 +1169,9 @@ function createReservation(reservationData) {
    // 予約終了時間を計算
    const endTime = new Date(reservationDateTime.getTime() + SESSION_DURATION * 60 * 1000);
    const creationTime = now;
+   
+   // スタッフへのメモを取得
+   const customerNotes = reservationData.notes || "";
    
    // スプレッドシートに追記
    reservationsSheet.appendRow([
@@ -1185,16 +1188,17 @@ function createReservation(reservationData) {
      false,                  // キャンセル [10]
      0,                      // 金額（必要に応じて設定） [11]
      trainingDescription,    // 説明テキスト [12]
-     SESSION_DURATION        // トレーニング時間 [13]
+     SESSION_DURATION,       // トレーニング時間 [13]
+     customerNotes           // スタッフへのメモ [14] - 新規追加
    ]);
-   console.log(`スプレッドシートに予約追加: ID=${reservationId}`);
+   console.log(`スプレッドシートに予約追加: ID=${reservationId}, メモ=${customerNotes ? "あり" : "なし"}`);
 
    // Googleカレンダーに登録
    try {
      const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
      if (calendar) {
        const eventTitle = `${userInfo.name}様 / パーソナルトレーニング`;
-       const eventDescription = `予約ID: ${reservationId}\nLINE UID: ${reservationData.userId}\n電話番号: ${userInfo.phone}\n内容: ${trainingDescription}`;
+       const eventDescription = `予約ID: ${reservationId}\nLINE UID: ${reservationData.userId}\n電話番号: ${userInfo.phone}\n内容: ${trainingDescription}\n\n【スタッフへのメモ】\n${customerNotes || "なし"}`;
        calendar.createEvent(eventTitle, reservationDateTime, endTime, { description: eventDescription });
        console.log(`Googleカレンダーにイベント追加: ${eventTitle}`);
      } else {
@@ -1323,6 +1327,29 @@ function createReservation(reservationData) {
                        weight: "regular"
                      }
                    ]
+                 },
+                 {
+                   type: "box",
+                   layout: "baseline",
+                   spacing: "md",
+                   contents: [
+                     {
+                       type: "text",
+                       text: "メモ",
+                       color: "#aaaaaa",
+                       size: "sm",
+                       flex: 2
+                     },
+                     {
+                       type: "text",
+                       text: customerNotes || "なし",
+                       wrap: true,
+                       color: "#666666",
+                       size: "sm",
+                       flex: 8,
+                       weight: "regular"
+                     }
+                   ]
                  }
                ]
              }
@@ -1392,7 +1419,8 @@ function createReservation(reservationData) {
        time: reservationData.time,
        endTime: Utilities.formatDate(endTime, 'Asia/Tokyo', 'HH:mm'),
        description: trainingDescription,
-       duration: SESSION_DURATION
+       duration: SESSION_DURATION,
+       notes: customerNotes // スタッフへのメモ情報を追加
      }
    };
 
@@ -1770,7 +1798,8 @@ function getUserReservations(userId) {
            time: Utilities.formatDate(reservationDateTime, 'Asia/Tokyo', 'HH:mm'), // HH:MM
            endTime: endTime, // 終了時間
            description: row[12] || "パーソナルトレーニング", // 説明
-           duration: row[13] || SESSION_DURATION // 所要時間
+           duration: row[13] || SESSION_DURATION, // 所要時間
+           notes: row[14] || "" // スタッフへのメモ [14] - 新規追加
          });
        }
      }
