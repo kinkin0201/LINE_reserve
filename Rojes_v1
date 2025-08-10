@@ -1,0 +1,3511 @@
+/**
+ * 予約システム - Google Apps Script
+ *
+ * 機能:
+ * - LINEからのメッセージに応答して予約フォームURL、予約一覧、ヘルプを表示
+ * - Webアプリで会員登録と予約フォームを提供
+ * - 予約可能な日時をカレンダー形式で表示 (60分間隔)
+ * - 予約作成、確認、キャンセル機能
+ * - GoogleスプレッドシートとGoogleカレンダーとの連携
+ * - 予約前日のリマインドメッセージ送信
+ */
+
+// ----------------------------------------
+// 定数と設定
+// ----------------------------------------
+
+// ▼▼▼ 環境に合わせて設定してください ▼▼▼
+const LINE_ACCESS_TOKEN = PropertiesService.getScriptProperties().getProperty('LINE_ACCESS_TOKEN') || 'HMiVoPn/Axc11kcRv24mRn96dZ6IQlB74Q0cFo5YU6owyCo+wCw0wmPkGiYnY8RhjoC6IaQQv4WgBfODmNJe+YId0JTNVCK4KbqTkqLfauBGm71Db7mGmEqGzTJB4eub/7PcXia0VzGy8WU1ZNinowdB04t89/1O/w1cDnyilFU='; // LINE Messaging APIのアクセストークン　【編集箇所】
+const CALENDAR_ID = PropertiesService.getScriptProperties().getProperty('CALENDAR_ID') || 'fcf9ca7d6b1926ccd379dedea6f561ff4080950eb7b47e5c46b6425ed4558305@group.calendar.google.com'; // 予約管理用GoogleカレンダーID　　【編集箇所】
+const SPREADSHEET_ID = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID') || '1MqnKa96gNVhx1tWu2B78RBgQ-QJSNk_bIXTpPQNuNkg'; // データベース用スプレッドシートID　　【編集箇所】
+// ▲▲▲ 環境に合わせて設定してください ▲▲▲
+
+// シート名
+const SHEET_NAMES = {
+  USERS: 'ユーザー情報',
+  RESERVATIONS: '予約情報',
+  SETTINGS: '設定',
+  MENUS: 'メニュー情報' 
+};
+
+// 予約設定　【編集箇所】
+const BUSINESS_HOURS = {
+  START: 9, // 営業開始時間
+  END: 20,  // 営業終了時間
+  MAX_SLOTS: 5, // 同時刻の最大予約数
+  MAX_USER_RESERVATIONS: 5, // 1ユーザーあたりの最大予約数
+  TIME_INTERVAL: 20 // 予約可能な時間間隔（分）
+};
+
+// パーソナルジムの固定設定　【編集箇所】
+const SESSION_DURATION = 60; // セッション時間は常に60分
+
+// 予約可能日数（今日から何日先まで予約可能か）　【編集箇所】
+const DAYS_AHEAD = 45;
+
+// 予約通知メール設定
+const EMAIL_NOTIFICATION = {
+  ENABLED: true,  // メール通知を有効/無効にするフラグ
+  TO_ADDRESSES: 'richthx@gmail.com',  // 通知先メールアドレス（複数指定する場合はカンマ区切り）　【編集箇所】
+  FROM_ADDRESS: 'r-kinjo@veryda.jp',  // 送信者メールアドレス（Google Workspaceを使用の場合）
+  SUBJECT_TEMPLATE: '【予約システム】新規予約のお知らせ',  // メール件名のテンプレート
+  IMPORTANCE: 'normal'  // 重要度（high, normal, low）
+};
+
+// 予約可能開始日（今日から何日後から予約可能か）
+const MIN_DAYS_AHEAD = 1;  //　【編集箇所】
+
+// 定休日の設定（0:日曜, 1:月曜, 2:火曜, 3:水曜, 4:木曜, 5:金曜, 6:土曜）　【編集箇所】
+const CLOSED_DAYS = [1]; // 月曜日が定休日
+
+// ----------------------------------------
+// Webhook (LINEからのリクエスト受信)
+// ----------------------------------------
+
+/**
+ * LINE Messaging APIからのPOSTリクエストを処理する
+ * @param {object} e - イベントオブジェクト
+ * @return {object} - ContentService TextOutput
+ */
+function doPost(e) {
+  console.log('doPost関数が呼び出されました');
+  try {
+    // リクエストボディの存在チェック
+    if (!e || !e.postData || !e.postData.contents) {
+      console.error('無効なリクエスト: postDataまたはcontentsがありません');
+      return createJsonResponse({ status: 'error', message: 'Invalid request: No postData or contents' });
+    }
+
+    const contents = JSON.parse(e.postData.contents);
+
+    // イベント配列の存在チェック
+    if (!contents.events || !Array.isArray(contents.events)) {
+      console.error('無効なリクエスト: events配列がありません');
+      return createJsonResponse({ status: 'error', message: 'Invalid request: No events array' });
+    }
+
+    // イベント情報をキャッシュに保存（Reply APIでユーザーIDを取得するために使用）
+    try {
+      const cache = CacheService.getScriptCache();
+      cache.put('current_line_events', JSON.stringify(contents.events), 600); // 10分間有効
+      console.log('イベント情報をキャッシュに保存しました');
+    } catch (cacheError) {
+      console.error('イベント情報のキャッシュに失敗しました:', cacheError);
+      // キャッシュに失敗してもメイン処理は続行
+    }
+
+    // 各イベントを処理
+    contents.events.forEach(event => {
+      if (!event || !event.source || !event.source.userId) {
+        console.warn('Skipping event due to missing source or userId:', JSON.stringify(event));
+        return; // ユーザーIDがないイベントはスキップ
+      }
+
+      // ユーザーIDと一時トークンのマッピングを作成
+      if (event.source.userId) {
+        try {
+          // ユーザーが操作した直後なので、このタイミングでトークンを事前生成しておく
+          const token = generateTokenForUser(event.source.userId);
+          console.log(`ユーザー ${event.source.userId} の一時トークン生成: ${token}`);
+        } catch (tokenError) {
+          console.error('トークン生成エラー:', tokenError);
+          // トークン生成に失敗してもメイン処理は続行
+        }
+      }
+
+      switch (event.type) {
+        case 'message':
+          if (event.message && event.message.type === 'text') {
+            handleUserMessage(event);
+          }
+          break;
+        case 'postback':
+          handlePostback(event);
+          break;
+        case 'follow':
+          handleFollow(event);
+          break;
+        default:
+          console.log('未対応のイベントタイプ:', event.type);
+      }
+    });
+
+    // 正常終了
+    return createJsonResponse({ status: 'success' });
+
+  } catch (error) {
+    console.error('doPostでエラーが発生しました:', error, error.stack);
+    // LINEプラットフォームへのエラー応答
+    return createJsonResponse({ status: 'error', message: 'Internal Server Error: ' + error.message });
+  }
+}
+
+/**
+ * JSONレスポンスを生成するヘルパー関数
+ * @param {object} obj - レスポンスオブジェクト
+ * @return {object} - ContentService TextOutput
+ */
+function createJsonResponse(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ----------------------------------------
+// LINEイベントハンドラ
+// ----------------------------------------
+
+/**
+ * テキストメッセージイベントを処理する
+ * @param {object} event - LINEイベントオブジェクト
+ */
+function handleUserMessage(event) {
+  // イベントオブジェクトの存在確認
+  if (!event) {
+    console.error('handleUserMessage: イベントオブジェクトがありません');
+    return;
+  }
+
+  // イベントソースの存在確認
+  if (!event.source || !event.source.userId) {
+    console.error('handleUserMessage: イベントソースまたはuserIdがありません', event);
+    return;
+  }
+
+  const userId = event.source.userId;
+  const userMessage = event.message.text.trim(); 
+  const replyToken = event.replyToken; // Reply APIで使用するトークンを取得
+  console.log(`メッセージ受信: UserID=${userId}, Message='${userMessage}'`);
+
+  try {
+    // メッセージ内容に応じた処理分岐
+    if (userMessage === '予約する' || userMessage === '予約') {
+      sendReservationButtonMessage(replyToken); // replyTokenを渡すよう変更
+    } else if (userMessage === '予約確認') {
+      // 予約確認ページURLを送信
+      sendReservationCheckUrl(replyToken); // replyTokenを渡すよう変更
+    } else if (userMessage === 'ヘルプ') {
+      sendHelpMessage(userId, replyToken); // replyTokenを追加
+    } else if (userMessage.toLowerCase().startsWith('キャンセル:')) {
+      const parts = userMessage.split(':');
+      if (parts.length > 1) {
+        const reservationId = parts[1].trim();
+        if (reservationId) {
+          const result = cancelReservation(reservationId, userId);
+          sendLineMessage(userId, result.message, replyToken); // replyTokenを追加
+        } else {
+          sendLineMessage(userId, 'キャンセルする予約IDを指定してください。\n例: キャンセル:12345abc', replyToken); // replyTokenを追加
+        }
+      } else {
+        sendLineMessage(userId, 'キャンセルする予約IDを指定してください。\n例: キャンセル:12345abc', replyToken); // replyTokenを追加
+      }
+    }
+    // 指定されたコマンド以外は何も反応しない
+  } catch (error) {
+    console.error(`handleUserMessageでエラー UserID=${userId}:`, error, error.stack);
+    sendLineMessage(userId, 'エラーが発生しました。しばらくしてからもう一度お試しください。', replyToken); // replyTokenを追加
+  }
+}
+
+/**
+ * 予約ボタン付きメッセージをLINEで送信する関数
+ * @param {string} replyToken - Reply APIで使用するトークン
+ */
+function sendReservationButtonMessage(replyToken) {
+  try {
+    // replyTokenからユーザーIDを取得するための追加処理
+    // 注: 現在のAPI仕様ではReply APIのみでユーザーIDを取得できない場合があります
+    const webAppUrl = ScriptApp.getService().getUrl();
+    let reservationUrl;
+    
+    // イベントオブジェクトから取得したuserIdを使用（グローバル変数または前の処理でキャプチャ）
+    const currentEvents = CacheService.getScriptCache().get('current_line_events');
+    let userId = null;
+    
+    if (currentEvents) {
+      const events = JSON.parse(currentEvents);
+      const currentEvent = events.find(e => e.replyToken === replyToken);
+      if (currentEvent && currentEvent.source && currentEvent.source.userId) {
+        userId = currentEvent.source.userId;
+      }
+    }
+    
+    if (userId) {
+      // ユーザーIDが取得できた場合は一時トークンを生成
+      const token = generateTokenForUser(userId);
+      reservationUrl = `${webAppUrl}?token=${encodeURIComponent(token)}`;
+    } else {
+      // 取得できなかった場合はIDを引数なしでURLを生成
+      reservationUrl = webAppUrl;
+    }
+
+    // Flex Messageでボタン付きメッセージを作成
+    const message = {
+      type: 'flex',
+      altText: '予約フォームを開く',
+      contents: {
+        type: 'bubble',
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: '以下のボタンから予約フォームを開いてください。',
+              wrap: true,
+              margin: 'md'
+            }
+          ]
+        },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'button',
+              action: {
+                type: 'uri',
+                label: '予約フォームを開く',
+                uri: reservationUrl
+              },
+              style: 'primary',
+              height: 'sm'
+            }
+          ]
+        }
+      }
+    };
+
+    // Reply APIを使用してFlex Messageを送信
+    const url = 'https://api.line.me/v2/bot/message/reply';
+    const headers = {
+      'Content-Type': 'application/json; charset=UTF-8',
+      'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN,
+    };
+    
+    const payload = {
+      replyToken: replyToken,
+      messages: [message]
+    };
+    
+    const options = {
+      method: 'post',
+      headers: headers,
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+    
+    if (responseCode === 200) {
+      console.log('予約ボタン付きメッセージ送信成功:', responseCode);
+      return true;
+    } else {
+      console.error(`予約ボタン付きメッセージ送信失敗: Code=${responseCode}, Body=${response.getContentText()}`);
+      // Flex Messageが送信できない場合は、通常のテキストメッセージを代わりに送信
+      sendReservationUrl(null, replyToken); // userIdを省略し、replyTokenを渡す
+      return false;
+    }
+    
+  } catch (error) {
+    console.error(`sendReservationButtonMessageでエラー ReplyToken=${replyToken}:`, error, error.stack);
+    // エラー発生時はフォールバックとして通常のテキストメッセージを送信
+    sendReservationUrl(null, replyToken); // userIdを省略し、replyTokenを渡す
+    return false;
+  }
+}
+
+/**
+ * ポストバックイベントを処理する
+ * @param {object} event - LINEイベントオブジェクト
+ */
+function handlePostback(event) {
+  const userId = event.source.userId;
+  const data = event.postback.data;
+  const replyToken = event.replyToken; // Reply APIで使用するトークンを取得
+  console.log(`ポストバック受信: UserID=${userId}, Data='${data}'`);
+
+  try {
+    if (!userId) {
+      console.error('handlePostback: userIdがありません');
+      return;
+    }
+
+    // ポストバックデータに応じた処理
+    if (data.startsWith('cancel_reservation:')) {
+      const reservationId = data.split(':')[1];
+      if (reservationId) {
+        const result = cancelReservation(reservationId, userId);
+        sendLineMessage(userId, result.message, replyToken); // replyTokenを追加
+      } else {
+        sendLineMessage(userId, 'キャンセル処理でエラーが発生しました。(ID不明)', replyToken); // replyTokenを追加
+      }
+    }
+  } catch (error) {
+    console.error(`handlePostbackでエラー UserID=${userId}, Data=${data}:`, error, error.stack);
+    sendLineMessage(userId, '処理中にエラーが発生しました。', replyToken); // replyTokenを追加
+  }
+}
+
+/**
+ * フォロー（友達追加）イベントを処理する
+ * @param {object} event - LINEイベントオブジェクト
+ */
+function handleFollow(event) {
+  const userId = event.source.userId;
+  const replyToken = event.replyToken; // Reply APIで使用するトークンを取得
+  console.log(`フォロー受信: UserID=${userId}`);
+
+  try {
+    if (!userId) {
+      console.error('handleFollow: userIdがありません');
+      return;
+    }
+
+    // 友達追加時のウェルカムメッセージ
+    sendLineMessage(userId,
+      'ご登録ありがとうございます！\n\n' +
+      'このLINEアカウントでは予約の管理ができます。\n\n' +
+      '【使い方】\n' +
+      '・「予約」と送信すると予約フォームのURLが送られます\n' +
+      '・「予約確認」と送信すると現在の予約一覧が表示されます\n' +
+      '・「ヘルプ」と送信するとヘルプ情報が表示されます',
+      replyToken // replyTokenを追加
+    );
+  } catch (error) {
+    console.error(`handleFollowでエラー UserID=${userId}:`, error, error.stack);
+  }
+}
+
+// ----------------------------------------
+// LINEメッセージ送信関数
+// ----------------------------------------
+
+/**
+* 予約フォームのURLをLINEで送信する関数
+* @param {string} userId - 送信先LINEユーザーID (Pushの場合)
+* @param {string} replyToken - Reply APIで使用するトークン (Reply時)
+*/
+function sendReservationUrl(userId, replyToken) {
+ try {
+   const webAppUrl = ScriptApp.getService().getUrl();
+   // ユーザーIDをパラメータとして付与
+   // 注: Reply APIの場合はuserIdがnullなので、その場合はURLにuserIdパラメータを含めない
+   const reservationUrl = userId ? `${webAppUrl}?userId=${encodeURIComponent(userId)}` : webAppUrl;
+   
+   const messageText = `【予約フォーム】\n\n以下のURLから予約ができます。\n\n${reservationUrl}`;
+
+   // replyTokenが提供されている場合はReply API、そうでなければPush APIを使用
+   if (replyToken) {
+     // Reply APIを使用
+     const url = 'https://api.line.me/v2/bot/message/reply';
+     const headers = {
+       'Content-Type': 'application/json; charset=UTF-8',
+       'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN,
+     };
+     const payload = {
+       replyToken: replyToken,
+       messages: [
+         {
+           type: 'text',
+           text: messageText,
+         },
+       ],
+     };
+     const options = {
+       method: 'post',
+       headers: headers,
+       payload: JSON.stringify(payload),
+       muteHttpExceptions: true
+     };
+
+     const response = UrlFetchApp.fetch(url, options);
+     const responseCode = response.getResponseCode();
+     
+     if (responseCode === 200) {
+       console.log('LINEメッセージ送信成功 (Reply):', responseCode);
+       return true;
+     } else {
+       console.error(`LINEメッセージ送信失敗 (Reply): Code=${responseCode}, Body=${response.getContentText()}`);
+       return false;
+     }
+   } else if (userId) {
+     // Push APIを使用 (replyTokenがない場合の従来の動作)
+     const url = 'https://api.line.me/v2/bot/message/push';
+     const headers = {
+       'Content-Type': 'application/json; charset=UTF-8',
+       'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN,
+     };
+     const payload = {
+       to: userId,
+       messages: [
+         {
+           type: 'text',
+           text: messageText,
+         },
+       ],
+     };
+     const options = {
+       method: 'post',
+       headers: headers,
+       payload: JSON.stringify(payload),
+       muteHttpExceptions: true
+     };
+
+     const response = UrlFetchApp.fetch(url, options);
+     const responseCode = response.getResponseCode();
+     
+     if (responseCode === 200) {
+       console.log('LINEメッセージ送信成功 (Push):', responseCode);
+       return true;
+     } else {
+       console.error(`LINEメッセージ送信失敗 (Push): Code=${responseCode}, Body=${response.getContentText()}`);
+       return false;
+     }
+   } else {
+     console.error('sendReservationUrl: userIdもreplyTokenも指定されていません。');
+     return false;
+   }
+ } catch (error) {
+   console.error(`sendReservationUrlでエラー:`, error, error.stack);
+   return false;
+ }
+}
+
+/**
+ * 新規予約のメール通知を送信する関数
+ * @param {object} reservationInfo - 予約情報オブジェクト
+ * @param {object} userInfo - ユーザー情報オブジェクト
+ * @param {object} menuInfo - メニュー情報オブジェクト
+ * @return {boolean} - 送信成功時はtrue、失敗時はfalse
+ */
+function sendNewReservationEmail(reservationInfo, userInfo, menuInfo) {
+  // スクリプトプロパティから設定を取得（実際の運用時は動的に読み込む）
+  const properties = PropertiesService.getScriptProperties();
+  const emailSettings = {
+    ENABLED: properties.getProperty('EMAIL_NOTIFICATION_ENABLED') === 'true',
+    TO_ADDRESSES: properties.getProperty('EMAIL_NOTIFICATION_TO') || EMAIL_NOTIFICATION.TO_ADDRESSES,
+    FROM_ADDRESS: properties.getProperty('EMAIL_NOTIFICATION_FROM') || EMAIL_NOTIFICATION.FROM_ADDRESS,
+    SUBJECT_TEMPLATE: EMAIL_NOTIFICATION.SUBJECT_TEMPLATE,
+    IMPORTANCE: EMAIL_NOTIFICATION.IMPORTANCE
+  };
+
+  if (!emailSettings.ENABLED) {
+    console.log('メール通知が無効になっています。');
+    return false;
+  }
+
+  try {
+    // 日時の整形
+    const reservationDate = new Date(reservationInfo.date + 'T' + reservationInfo.time + ':00');
+    const formattedDate = formatDateJapanese(reservationDate);
+    const endTime = reservationInfo.endTime || 
+      `${String(reservationDate.getHours() + Math.floor(menuInfo.duration / 60)).padStart(2, '0')}:${String((reservationDate.getMinutes() + menuInfo.duration % 60) % 60).padStart(2, '0')}`;
+
+    // メール本文を作成
+    const emailBody = `
+新規の予約が入りました。
+
+【予約詳細】
+予約ID: ${reservationInfo.id}
+日時: ${formattedDate} ${reservationInfo.time} - ${endTime}
+お客様名: ${userInfo.name}
+
+電話番号: ${userInfo.phone}
+メールアドレス: ${userInfo.email}
+メニュー: ${menuInfo.name}
+所要時間: ${menuInfo.duration}分
+料金: ¥${menuInfo.price.toLocaleString()}
+スタッフへのメモ: ${reservationInfo.notes || 'なし'}
+
+※この予約は予約システムから自動送信されました。
+    `;
+
+    // HTMLメール本文を作成（見栄えの良いHTML形式）
+    const htmlBody = `
+<div style="font-family: Arial, sans-serif; line-height: 1.6;">
+  <h2 style="color: #2E8B57;">新規予約のお知らせ</h2>
+  
+  <div style="background-color: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+    <h3 style="color: #333; margin-top: 0;">【予約詳細】</h3>
+    
+    <table style="width: 100%; border-collapse: collapse;">
+      <tr style="border-bottom: 1px solid #ddd;">
+        <td style="padding: 8px; font-weight: bold; width: 120px;">予約ID</td>
+        <td style="padding: 8px;">${reservationInfo.id}</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #ddd;">
+        <td style="padding: 8px; font-weight: bold;">日時</td>
+        <td style="padding: 8px;">${formattedDate} ${reservationInfo.time} - ${endTime}</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #ddd;">
+        <td style="padding: 8px; font-weight: bold;">お客様名</td>
+        <td style="padding: 8px;">${userInfo.name}</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #ddd;">
+        <td style="padding: 8px; font-weight: bold;">電話番号</td>
+        <td style="padding: 8px;">${userInfo.phone}</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #ddd;">
+        <td style="padding: 8px; font-weight: bold;">メールアドレス</td>
+        <td style="padding: 8px;">${userInfo.email}</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #ddd;">
+        <td style="padding: 8px; font-weight: bold;">メニュー</td>
+        <td style="padding: 8px;">${menuInfo.name}</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #ddd;">
+        <td style="padding: 8px; font-weight: bold;">所要時間</td>
+        <td style="padding: 8px;">${menuInfo.duration}分</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #ddd;">
+        <td style="padding: 8px; font-weight: bold;">料金</td>
+        <td style="padding: 8px;">¥${menuInfo.price.toLocaleString()}</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #ddd;">
+        <td style="padding: 8px; font-weight: bold;">スタッフへのメモ</td>
+        <td style="padding: 8px;">${reservationInfo.notes || 'なし'}</td>
+      </tr>
+    </table>
+  </div>
+  
+  <p style="color: #666; font-size: 14px; margin-top: 30px;">
+    ※この予約は予約システムから自動送信されました。
+  </p>
+</div>
+    `;
+
+    // メール送信
+    const options = {
+      name: '予約システム',
+      htmlBody: htmlBody,
+      importance: emailSettings.IMPORTANCE
+    };
+
+    // 送信者メールアドレスが指定されている場合
+    if (emailSettings.FROM_ADDRESS) {
+      options.replyTo = emailSettings.FROM_ADDRESS;
+    }
+
+    GmailApp.sendEmail(
+      emailSettings.TO_ADDRESSES,
+      emailSettings.SUBJECT_TEMPLATE,
+      emailBody,
+      options
+    );
+
+    console.log(`新規予約メール通知送信成功: ID=${reservationInfo.id}, To=${emailSettings.TO_ADDRESSES}`);
+    return true;
+
+  } catch (error) {
+    console.error('新規予約メール通知エラー:', error, error.stack);
+    return false;
+  }
+}
+
+// ----------------------------------------
+// 設定用ヘルパー関数（新規追加）
+// ----------------------------------------
+
+/**
+ * 現在のメール通知設定を表示する関数
+ */
+function showCurrentEmailSettings() {
+  const properties = PropertiesService.getScriptProperties();
+  const enabled = properties.getProperty('EMAIL_NOTIFICATION_ENABLED');
+  const toAddresses = properties.getProperty('EMAIL_NOTIFICATION_TO');
+  const fromAddress = properties.getProperty('EMAIL_NOTIFICATION_FROM');
+  
+  const message = `
+【現在のメール通知設定】
+
+有効状態: ${enabled === 'true' ? '有効' : enabled === 'false' ? '無効' : '未設定'}
+通知先: ${toAddresses || '未設定'}
+送信者: ${fromAddress || '（指定なし）'}
+
+設定を変更するには:
+updateEmailNotificationSettings(true, 'your-email@example.com') を実行
+  `;
+  
+  console.log(message);
+  SpreadsheetApp.getUi().alert(message);
+}
+
+/**
+ * UI非依存のメール通知テスト関数
+ * スクリプトエディタから直接実行可能
+ */
+function testEmailNotificationNoUI() {
+  console.log('メール通知テスト開始...');
+  
+  const testReservationInfo = {
+    id: 'TEST' + Date.now(),
+    date: '2025-05-20',
+    time: '10:00',
+    endTime: '11:00',
+    notes: 'テストメールです。実際の予約ではありません。'
+  };
+
+  const testUserInfo = {
+    name: 'テスト太郎',
+    phone: '090-1234-5678',
+    email: 'test@example.com'
+  };
+
+  const testMenuInfo = {
+    name: 'パーソナルトレーニング',
+    duration: 60,
+    price: 8000
+  };
+
+  console.log('テストメール送信中...');
+  const result = sendNewReservationEmail(testReservationInfo, testUserInfo, testMenuInfo);
+  
+  if (result) {
+    console.log('✅ テストメール送信成功！');
+    console.log('設定したアドレスにメールが届いているか確認してください。');
+  } else {
+    console.log('❌ テストメール送信失敗');
+    console.log('設定を確認してからもう一度お試しください。');
+  }
+  
+  return result;
+}
+
+/**
+ * 現在のメール設定を表示（UI非依存版）
+ */
+function showCurrentEmailSettingsNoUI() {
+  const properties = PropertiesService.getScriptProperties();
+  const enabled = properties.getProperty('EMAIL_NOTIFICATION_ENABLED');
+  const toAddresses = properties.getProperty('EMAIL_NOTIFICATION_TO');
+  const fromAddress = properties.getProperty('EMAIL_NOTIFICATION_FROM');
+  
+  console.log('【現在のメール通知設定】');
+  console.log('');
+  console.log('有効状態:', enabled === 'true' ? '✅ 有効' : enabled === 'false' ? '❌ 無効' : '⚠️ 未設定');
+  console.log('通知先:', toAddresses || '❌ 未設定');
+  console.log('送信者:', fromAddress || '（指定なし）');
+  console.log('');
+  console.log('設定を変更するには:');
+  console.log('updateEmailNotificationSettings(true, "your-email@example.com") を実行');
+}
+
+/**
+ * メール通知設定を更新する関数（UI非依存版）
+ * @param {boolean} enabled - メール通知を有効にするか
+ * @param {string} toAddresses - 通知先メールアドレス（カンマ区切り）
+ * @param {string} fromAddress - 送信者メールアドレス（オプション）
+ */
+function updateEmailNotificationSettingsNoUI(enabled, toAddresses, fromAddress = '') {
+  // 引数のバリデーション
+  if (enabled === undefined || toAddresses === undefined) {
+    console.error('必須パラメータが不足しています');
+    console.error('使用方法: updateEmailNotificationSettingsNoUI(true, "your-email@example.com", "sender@example.com")');
+    return false;
+  }
+  
+  // スクリプトプロパティに保存
+  const properties = PropertiesService.getScriptProperties();
+  properties.setProperties({
+    'EMAIL_NOTIFICATION_ENABLED': enabled.toString(),
+    'EMAIL_NOTIFICATION_TO': toAddresses,
+    'EMAIL_NOTIFICATION_FROM': fromAddress || ''
+  });
+  
+  console.log('✅ メール通知設定を更新しました:');
+  console.log(`  有効状態: ${enabled ? '有効' : '無効'}`);
+  console.log(`  通知先: ${toAddresses}`);
+  console.log(`  送信者: ${fromAddress || '（指定なし）'}`);
+  console.log('');
+  console.log('設定が反映されました。');
+  
+  return true;
+}
+
+/**
+* 予約確認ページのURLをLINEで送信する関数
+* @param {string} replyToken - Reply APIで使用するトークン
+*/
+function sendReservationCheckUrl(replyToken) {
+ try {
+   // イベントオブジェクトから取得したuserIdを使用
+   const currentEvents = CacheService.getScriptCache().get('current_line_events');
+   let userId = null;
+   
+   if (currentEvents) {
+     const events = JSON.parse(currentEvents);
+     const currentEvent = events.find(e => e.replyToken === replyToken);
+     if (currentEvent && currentEvent.source && currentEvent.source.userId) {
+       userId = currentEvent.source.userId;
+     }
+   }
+   
+   const webAppUrl = ScriptApp.getService().getUrl();
+   let reservationCheckUrl = webAppUrl;
+   
+   if (userId) {
+     // ユーザーIDが取得できた場合は一時トークンを生成
+     const token = generateTokenForUser(userId);
+     reservationCheckUrl = `${webAppUrl}?token=${encodeURIComponent(token)}`;
+   }
+   
+   // Flex Messageでボタン付きメッセージを作成
+   const message = {
+     type: 'flex',
+     altText: '予約確認・キャンセル',
+     contents: {
+       type: 'bubble',
+       body: {
+         type: 'box',
+         layout: 'vertical',
+         contents: [
+           {
+             type: 'text',
+             text: '[予約の確認・キャンセル]タブから操作が行えます。',
+             wrap: true,
+             margin: 'md'
+           }
+         ]
+       },
+       footer: {
+         type: 'box',
+         layout: 'vertical',
+         contents: [
+           {
+             type: 'button',
+             action: {
+               type: 'uri',
+               label: '予約確認・キャンセル',
+               uri: reservationCheckUrl
+             },
+             style: 'primary',
+             height: 'sm'
+           }
+         ]
+       }
+     }
+   };
+
+   // Reply APIを使用してFlex Messageを送信
+   const url = 'https://api.line.me/v2/bot/message/reply';
+   const headers = {
+     'Content-Type': 'application/json; charset=UTF-8',
+     'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN,
+   };
+   
+   const payload = {
+     replyToken: replyToken,
+     messages: [message]
+   };
+   
+   const options = {
+     method: 'post',
+     headers: headers,
+     payload: JSON.stringify(payload),
+     muteHttpExceptions: true
+   };
+
+   const response = UrlFetchApp.fetch(url, options);
+   const responseCode = response.getResponseCode();
+   
+   if (responseCode === 200) {
+     console.log('予約確認ボタン付きメッセージ送信成功 (Reply):', responseCode);
+     return true;
+   } else {
+     console.error(`予約確認ボタン付きメッセージ送信失敗 (Reply): Code=${responseCode}, Body=${response.getContentText()}`);
+     // Flex Messageが送信できない場合は、通常のテキストメッセージを代わりに送信
+     const messageText = `【予約確認・キャンセル】\n\n以下のURLから予約の確認・キャンセルができます。\n\n${reservationCheckUrl}`;
+     sendLineMessage(null, messageText, replyToken);
+     return false;
+   }
+   
+ } catch (error) {
+   console.error(`sendReservationCheckUrlでエラー:`, error, error.stack);
+   return false;
+ }
+}
+
+/**
+* ヘルプメッセージをLINEで送信する
+* @param {string} userId - 送信先LINEユーザーID (Pushの場合) - 今回は使用しない
+* @param {string} replyToken - Reply APIで使用するトークン
+*/
+function sendHelpMessage(userId, replyToken) {
+ const closedDayNames = CLOSED_DAYS.map(dayIndex => ["日", "月", "火", "水", "木", "金", "土"][dayIndex]).join('、');
+ const messageText = '【ヘルプ】\n\n' +
+   '・「予約する」: 予約フォームを開きます\n' +
+   '・「予約確認」: 現在の予約を確認します\n' +
+   '・「キャンセル:<予約ID>」: 指定したIDの予約をキャンセルします\n\n' +
+   `営業時間: ${BUSINESS_HOURS.START}:00～${BUSINESS_HOURS.END}:00\n` +
+   `定休日: ${closedDayNames || 'なし'}\n` +
+   `予約可能期間: ${MIN_DAYS_AHEAD}日後～${DAYS_AHEAD}日後まで\n` +
+   `最大予約数: お一人様${BUSINESS_HOURS.MAX_USER_RESERVATIONS}件まで`;
+ 
+ sendLineMessage(userId, messageText, replyToken);
+}
+
+/**
+* LINE Messaging APIを使用してテキストメッセージを送信する
+* @param {string} userId - 送信先LINEユーザーID (Pushの場合)
+* @param {string} messageText - 送信するメッセージ本文
+* @param {string} replyToken - Reply APIで使用するトークン (Reply時)
+* @return {boolean} - 送信成功時はtrue、失敗時はfalse
+*/
+function sendLineMessage(userId, messageText, replyToken) {
+ if (!messageText) {
+   console.error('sendLineMessage: messageTextがありません。');
+   return false;
+ }
+
+ if (!replyToken && !userId) {
+   console.error('sendLineMessage: userIdもreplyTokenも指定されていません。');
+   return false;
+ }
+
+ if (!LINE_ACCESS_TOKEN || LINE_ACCESS_TOKEN === 'YOUR_LINE_ACCESS_TOKEN') {
+   console.error('LINEアクセストークンが設定されていません。スクリプトプロパティを確認してください。');
+   return false;
+ }
+
+ console.log(`LINEメッセージ送信: ${replyToken ? 'Reply' : 'Push'}, Message='${messageText.substring(0, 50)}...'`); // 長いメッセージは省略してログ表示
+
+ try {
+   // replyTokenがある場合はReply API、なければPush APIを使用
+   if (replyToken) {
+     // Reply APIを使用
+     const url = 'https://api.line.me/v2/bot/message/reply';
+     const headers = {
+       'Content-Type': 'application/json; charset=UTF-8',
+       'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN,
+     };
+     const payload = {
+       replyToken: replyToken,
+       messages: [
+         {
+           type: 'text',
+           text: messageText,
+         },
+       ],
+     };
+     const options = {
+       method: 'post',
+       headers: headers,
+       payload: JSON.stringify(payload),
+       muteHttpExceptions: true
+     };
+
+     const response = UrlFetchApp.fetch(url, options);
+     const responseCode = response.getResponseCode();
+     
+     if (responseCode === 200) {
+       console.log('LINEメッセージ送信成功 (Reply):', responseCode);
+       return true;
+     } else {
+       console.error(`LINEメッセージ送信失敗 (Reply): Code=${responseCode}, Body=${response.getContentText()}`);
+       return false;
+     }
+   } else {
+     // Push APIを使用
+     const url = 'https://api.line.me/v2/bot/message/push';
+     const headers = {
+       'Content-Type': 'application/json; charset=UTF-8',
+       'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN,
+     };
+     const payload = {
+       to: userId,
+       messages: [
+         {
+           type: 'text',
+           text: messageText,
+         },
+       ],
+     };
+     const options = {
+       method: 'post',
+       headers: headers,
+       payload: JSON.stringify(payload),
+       muteHttpExceptions: true
+     };
+
+     const response = UrlFetchApp.fetch(url, options);
+     const responseCode = response.getResponseCode();
+     
+     if (responseCode === 200) {
+       console.log('LINEメッセージ送信成功 (Push):', responseCode);
+       return true;
+     } else {
+       console.error(`LINEメッセージ送信失敗 (Push): Code=${responseCode}, Body=${response.getContentText()}`);
+       return false;
+     }
+   }
+ } catch (error) {
+   console.error('LINEメッセージ送信中に例外発生:', error, error.stack);
+   return false;
+ }
+}
+
+// ----------------------------------------
+// Webアプリ (HTMLサービス)
+// ----------------------------------------
+
+/**
+ * WebアプリへのGETリクエストを処理する
+ * @param {object} e - イベントオブジェクト (e.parameter.token または e.parameter.userId を含む)
+ * @return {object} - HtmlService Output
+ */
+function doGet(e) {
+  console.log('doGet関数が呼び出されました:', JSON.stringify(e.parameter));
+  try {
+    let userId = null;
+    
+    // トークンからユーザーIDを取得
+    if (e.parameter.token) {
+      userId = getUserIdFromToken(e.parameter.token);
+      console.log(`トークンからユーザーID取得: token=${e.parameter.token}, userId=${userId}`);
+    } 
+    // 直接ユーザーIDが指定されている場合（後方互換性のため）
+    else if (e.parameter.userId) {
+      userId = e.parameter.userId;
+      console.log(`パラメータからユーザーID取得: ${userId}`);
+    }
+
+    // userIdがない場合はエラーページを表示
+    if (!userId) {
+      console.error('doGet: ユーザーIDを取得できませんでした');
+      return HtmlService.createHtmlOutput(`
+        <p>エラー: アクセス情報の有効期限が切れたか、不正なアクセスです。</p>
+        <p>LINEのメニューから「予約する」と送ると、新しいURLが発行されます。</p>
+        <p>そちらから再度アクセスしてください。</p>
+      `).setTitle('エラー - アクセス期限切れ');
+    }
+
+    // システム（スプレッドシート）の初期化を確認・実行
+    initializeSystem();
+
+    // ユーザー情報を取得
+    let userInfo;
+    try {
+      userInfo = getUserInfo(userId);
+      console.log(`ユーザー情報取得結果: ${userInfo ? 'ユーザーあり' : 'ユーザーなし'}`);
+    } catch (userInfoError) {
+      console.error(`getUserInfo呼び出しでエラー: ${userInfoError}`);
+      userInfo = null;
+    }
+
+    if (userInfo) {
+      // ユーザー情報があれば予約フォームを表示
+      console.log(`ユーザー情報が見つかりました (${userId})。予約フォームを表示します。`);
+      return showReservationForm(userId, userInfo, e.parameter.tab || 'new');
+    } else {
+      // ユーザー情報がなければ会員登録フォームを表示
+      console.log(`ユーザー情報が見つかりません (${userId})。会員登録フォームを表示します。`);
+      return showRegistrationForm(userId);
+    }
+  } catch (error) {
+    console.error('doGetでエラーが発生しました:', error, error.stack);
+    return HtmlService.createHtmlOutput(
+      '<p>エラーが発生しました。しばらくしてからもう一度お試しください。</p><p>詳細: ' + error.message + '</p>'
+    ).setTitle('エラー');
+  }
+}
+
+/**
+* 会員登録フォームのHTMLページを生成して表示する
+* @param {string} userId - LINEユーザーID
+* @return {object} - HtmlService Output
+*/
+function showRegistrationForm(userId) {
+ try {
+   // HTMLテンプレートを取得
+   const template = HtmlService.createTemplateFromFile('registration');
+   // テンプレートにユーザーIDを渡す
+   template.userId = userId;
+   // HTMLを評価してHtmlOutputオブジェクトを生成
+   const htmlOutput = template.evaluate();
+   htmlOutput.setTitle('会員登録');
+   htmlOutput.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+   return htmlOutput;
+ } catch (error) {
+   console.error('showRegistrationFormでエラー:', error, error.stack);
+   return HtmlService.createHtmlOutput('<p>会員登録ページの表示中にエラーが発生しました。</p>');
+ }
+}
+
+/**
+* 予約フォームのHTMLページを生成して表示する
+* @param {string} userId - LINEユーザーID
+* @param {object} userInfo - ユーザー情報オブジェクト
+* @param {string} activeTab - 表示するタブ（'new'または'list'）
+* @return {object} - HtmlService Output
+*/
+function showReservationForm(userId, userInfo, activeTab) {
+ try {
+   // HTMLテンプレートを取得
+   const template = HtmlService.createTemplateFromFile('reservation');
+
+   // テンプレートに変数を渡す
+   template.userId = userId;
+   template.userName = userInfo.name;
+   template.userPhone = userInfo.phone;
+   template.activeTab = activeTab;
+
+   // メニュー情報を取得して渡す
+   let menusJson = '[]';  // デフォルト値を空配列にする
+   try {
+     const menus = getAllMenus();
+     console.log(`メニュー情報取得: ${menus.length}件`);
+     menusJson = JSON.stringify(menus);
+   } catch (menuError) {
+     console.error('メニュー情報取得エラー:', menuError);
+     // エラー時はデフォルトの空配列を使用
+   }
+   template.menusJson = menusJson;
+
+   // 予約可能な期間を計算
+   const today = new Date();
+   const startDate = new Date();
+   startDate.setDate(today.getDate() + MIN_DAYS_AHEAD);
+   const endDate = new Date();
+   endDate.setDate(today.getDate() + DAYS_AHEAD);
+
+   // 日付フォーマット
+   let startDateStr = formatDate(startDate);
+   let endDateStr = formatDate(endDate);
+
+   template.startDate = startDateStr; // YYYY-MM-DD形式
+   template.endDate = endDateStr;     // YYYY-MM-DD形式
+
+   // ビジネス設定を渡す
+   template.businessHoursJson = JSON.stringify(BUSINESS_HOURS);
+   template.closedDaysJson = JSON.stringify(CLOSED_DAYS);
+   template.sessionDuration = SESSION_DURATION;
+   template.minDaysAhead = MIN_DAYS_AHEAD;
+   template.daysAhead = DAYS_AHEAD;
+
+   // HTMLを評価してHtmlOutputオブジェクトを生成
+   const htmlOutput = template.evaluate();
+   htmlOutput.setTitle('予約フォーム');
+   htmlOutput.setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+   return htmlOutput;
+ } catch (error) {
+   console.error('showReservationFormでエラー:', error, error.stack);
+   return HtmlService.createHtmlOutput('<p>予約ページの表示中にエラーが発生しました。</p><p>詳細: ' + error.message + '</p>');
+ }
+}
+
+// ----------------------------------------
+// 日付関連ヘルパー関数
+// ----------------------------------------
+
+/**
+* 日付オブジェクトをYYYY-MM-DD 形式の文字列にフォーマットする
+* @param {Date} date - フォーマットする日付オブジェクト
+* @return {string} - フォーマットされた日付文字列
+*/
+function formatDate(date) {
+ if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+   return ''; // 無効な日付の場合は空文字を返す
+ }
+ try {
+   // UTC基準ではなく、スクリプトのタイムゾーン（通常は日本のタイムゾーン）でフォーマット
+   return Utilities.formatDate(date, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+ } catch (error) {
+    console.error('formatDateでエラー:', error);
+    // フォールバックとして手動でフォーマット
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+ }
+}
+
+/**
+* 日付を「YYYY年MM月DD日（曜日）」形式にフォーマットする関数
+* @param {Date} date - フォーマットする日付オブジェクト
+* @return {string} - 「YYYY年MM月DD日（曜日）」形式の文字列
+*/
+function formatDateJapanese(date) {
+ if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+   return ''; // 無効な日付の場合は空文字を返す
+ }
+ 
+ try {
+   const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
+   const year = date.getFullYear();
+   const month = date.getMonth() + 1;
+   const day = date.getDate();
+   const dayOfWeek = dayNames[date.getDay()];
+   
+   return `${year}年${month}月${day}日（${dayOfWeek}）`;
+ } catch (error) {
+   console.error('formatDateJapaneseでエラー:', error);
+   return formatDate(date); // エラーが発生した場合は通常のformatDateにフォールバック
+ }
+}
+
+// ----------------------------------------
+// カレンダー関連関数
+// ----------------------------------------
+
+/**
+* 指定した日付範囲のカレンダーイベントを取得する
+* @param {Date} startDate - 開始日
+* @param {Date} endDate - 終了日
+* @param {string} calendarId - カレンダーID
+* @return {Array} - カレンダーイベントの配列
+*/
+function getCalendarEvents(startDate, endDate, calendarId) {
+ try {
+   const calendar = calendarId 
+     ? CalendarApp.getCalendarById(calendarId) 
+     : CalendarApp.getDefaultCalendar();
+   
+   if (!calendar) {
+     console.error('カレンダーが見つかりません:', calendarId);
+     return [];
+   }
+   
+   // 指定した日付範囲のイベントを取得
+   const events = calendar.getEvents(startDate, endDate);
+   
+   // 各イベントの情報を整形
+   return events.map(event => {
+     const eventStart = event.getStartTime();
+     const eventEnd = event.getEndTime();
+     const isAllDay = (
+       eventStart.getHours() === 0 && 
+       eventStart.getMinutes() === 0 && 
+       eventEnd.getHours() === 0 && 
+       eventEnd.getMinutes() === 0 &&
+       (eventEnd.getTime() - eventStart.getTime()) >= 24 * 60 * 60 * 1000
+     );
+     
+     return {
+       id: event.getId(),
+       title: event.getTitle(),
+       startTime: eventStart,
+       endTime: eventEnd,
+       description: event.getDescription(),
+       isAllDay: isAllDay
+     };
+   });
+ } catch (error) {
+   console.error('カレンダーイベント取得エラー:', error, error.stack);
+   return [];
+ }
+}
+
+// ----------------------------------------
+// ユーザー関連機能
+// ----------------------------------------
+
+/**
+* ユーザー情報をスプレッドシートから取得する
+* @param {string} userId - LINEユーザーID
+* @return {object|null} - ユーザー情報オブジェクト、見つからない場合はnull
+*/
+function getUserInfo(userId) {
+ console.log(`getUserInfo呼び出し: User=${userId}`);
+ if (!userId) return null;
+
+ try {
+   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+   const sheet = ss.getSheetByName(SHEET_NAMES.USERS);
+   if (!sheet) {
+     console.error('ユーザー情報シートが見つかりません。');
+     initializeSystem(); // シートがなければ初期化を試みる
+     return null;
+   }
+   const data = sheet.getDataRange().getValues();
+
+   // ヘッダー行(0)をスキップし、1行目からループ
+   for (let i = 1; i < data.length; i++) {
+     if (data[i][0] === userId) { // UID列(0)で比較
+       console.log(`ユーザー情報発見: ${userId}`);
+       
+       // フォーマット関数のエラーを防止するため、日付処理を保護
+       let birthdateStr = null;
+       if (data[i][6]) { // 生年月日列が6から変更
+         try {
+           birthdateStr = formatDate(new Date(data[i][6]));
+         } catch (e) {
+           console.warn(`birthdate フォーマットエラー: ${e.message}`);
+           // 手動でフォーマット
+           const bdate = new Date(data[i][6]);
+           if (!isNaN(bdate.getTime())) {
+             birthdateStr = `${bdate.getFullYear()}-${String(bdate.getMonth() + 1).padStart(2, '0')}-${String(bdate.getDate()).padStart(2, '0')}`;
+           }
+         }
+       }
+       
+       return {
+         userId: data[i][0],
+         name: data[i][1],
+         nameKana: data[i][2] || "", // カナ列を追加
+         phone: data[i][3],
+         email: data[i][4],
+         gender: data[i][5],
+         birthdate: birthdateStr,
+         registrationDate: data[i][7], // 登録日時
+         referralSource: data[i][8] || "", // 知ったきっかけ
+         occupation: data[i][9] || "", // 職業を追加
+         hobbies: data[i][10] || "" // 趣味を追加
+       };
+     }
+   }
+   console.log(`ユーザー情報見つからず: ${userId}`);
+   return null;
+ } catch (error) {
+   console.error('getUserInfoでエラー:', error, error.stack);
+   return null;
+ }
+}
+
+/**
+* 新規ユーザーを登録する (クライアントサイドJSから呼び出される)
+* @param {object} userData - ユーザー情報 (userId, name, nameKana, phone, email, gender, birthdate, referralSource, occupation, hobbies)
+* @return {object} - { success: boolean, message: string }
+*/
+function registerUser(userData) {
+ console.log('registerUser呼び出し:', JSON.stringify(userData));
+ if (!userData || !userData.userId || !userData.name || !userData.nameKana || !userData.phone || !userData.email || !userData.gender || !userData.birthdate || !userData.referralSource || !userData.occupation || !userData.hobbies) {
+   return { success: false, message: '登録情報が不足しています。' };
+ }
+
+ const lock = LockService.getScriptLock();
+ try {
+   lock.waitLock(10000); // 最大10秒待機
+
+   // 既存ユーザーチェック
+   if (getUserInfo(userData.userId)) {
+     console.log(`ユーザー (${userData.userId}) は既に登録済みです。`);
+     // 既存ユーザーの場合は成功として扱い、予約フォームへ遷移させるメッセージを返す
+     return { success: true, message: 'ユーザー情報は既に登録されています。予約ページへ進みます。' };
+   }
+
+   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+   const sheet = ss.getSheetByName(SHEET_NAMES.USERS);
+   if (!sheet) {
+     console.error('ユーザー情報シートが見つかりません。');
+     initializeSystem(); // 初期化試行
+     // 再度シート取得を試みる
+     const newSheet = ss.getSheetByName(SHEET_NAMES.USERS);
+     if (!newSheet) {
+       return { success: false, message: 'システムエラーが発生しました。(User sheet creation failed)' };
+     }
+     // 新しいシートを使用する
+     const registrationTime = new Date();
+     newSheet.appendRow([
+       userData.userId,
+       userData.name,
+       userData.nameKana, // カナ列を追加
+       userData.phone,
+       userData.email,
+       userData.gender,
+       new Date(userData.birthdate), // Dateオブジェクトとして保存
+       registrationTime,
+       userData.referralSource || "", // 知ったきっかけ
+       userData.occupation || "", // 職業列を追加
+       userData.hobbies || "" // 趣味列を追加
+     ]);
+   } else {
+     const registrationTime = new Date();
+     // スプレッドシートに追記
+     sheet.appendRow([
+       userData.userId,
+       userData.name,
+       userData.nameKana, // カナ列を追加
+       userData.phone,
+       userData.email,
+       userData.gender,
+       new Date(userData.birthdate), // Dateオブジェクトとして保存
+       registrationTime,
+       userData.referralSource || "", // 知ったきっかけ
+       userData.occupation || "", // 職業列を追加
+       userData.hobbies || "" // 趣味列を追加
+     ]);
+   }
+
+   console.log(`ユーザー登録完了: ${userData.userId}, ${userData.name}, カナ: ${userData.nameKana}, 職業: ${userData.occupation}, 趣味: ${userData.hobbies || "未入力"}`);
+   return { success: true, message: '会員登録が完了しました。' };
+
+ } catch (error) {
+   console.error('registerUserでエラー:', error, error.stack);
+   return { success: false, message: 'ユーザー登録中に予期せぬエラーが発生しました。' };
+ } finally {
+   try {
+     if (lock.hasLock()) {
+       lock.releaseLock();
+     }
+   } catch (lockError) {
+     console.error('ロック解放エラー:', lockError);
+   }
+ }
+}
+
+// ----------------------------------------
+// 予約関連コア機能
+// ----------------------------------------
+
+/**
+* 新しい予約を作成する (クライアントサイドJSから呼び出される)
+* @param {object} reservationData - 予約情報 (userId, date, time, menuId, notes)
+* @return {object} - { success: boolean, message: string, reservationInfo?: object }
+*/
+function createReservation(reservationData) {
+ console.log('createReservation呼び出し:', JSON.stringify(reservationData));
+ const lock = LockService.getScriptLock();
+ try {
+   lock.waitLock(15000); // 最大15秒待機
+
+   // --- バリデーション ---
+   if (!reservationData || !reservationData.userId || !reservationData.date || !reservationData.time || !reservationData.menuId) {
+     return { success: false, message: '予約情報が不足しています。' };
+   }
+
+   // ユーザー情報取得
+   const userInfo = getUserInfo(reservationData.userId);
+   if (!userInfo) {
+     return { success: false, message: 'ユーザー情報が見つかりません。会員登録を完了してください。' };
+   }
+
+   // メニュー情報取得
+   const menuInfo = getMenuById(reservationData.menuId);
+   if (!menuInfo) {
+     return { success: false, message: '選択されたメニューが見つかりません。' };
+   }
+
+   // 予約日時パース
+   const reservationDateTime = new Date(`${reservationData.date}T${reservationData.time}:00`);
+   if (isNaN(reservationDateTime.getTime())) {
+     return { success: false, message: '日時の形式が無効です。' };
+   }
+
+   // 現在時刻
+   const now = new Date();
+
+   // 予約数上限チェック (未来の予約のみカウント)
+   const userReservations = getUserReservations(reservationData.userId);
+   if (userReservations.length >= BUSINESS_HOURS.MAX_USER_RESERVATIONS) {
+     return { success: false, message: `予約数が上限（${BUSINESS_HOURS.MAX_USER_RESERVATIONS}件）に達しています。` };
+   }
+
+   // 予約可能期間チェック
+   const today = new Date();
+   today.setHours(0, 0, 0, 0);
+   const minBookableDate = new Date(today);
+   minBookableDate.setDate(today.getDate() + MIN_DAYS_AHEAD);
+   const maxBookableDate = new Date(today);
+   maxBookableDate.setDate(today.getDate() + DAYS_AHEAD);
+   maxBookableDate.setHours(23, 59, 59, 999); // 終了日の終わりまで
+
+   if (reservationDateTime < minBookableDate || reservationDateTime > maxBookableDate) {
+     return { success: false, message: `予約可能期間（${MIN_DAYS_AHEAD}日後～${DAYS_AHEAD}日後）外です。` };
+   }
+   
+   // 過去日時チェック
+   if (reservationDateTime < now) {
+     return { success: false, message: '過去の日時を予約することはできません。' };
+   }
+
+   // 定休日チェック
+   if (CLOSED_DAYS.includes(reservationDateTime.getDay())) {
+     return { success: false, message: '選択された日は定休日です。' };
+   }
+
+   // 営業時間チェック
+   const reservationHour = reservationDateTime.getHours();
+   if (reservationHour < BUSINESS_HOURS.START || reservationHour >= BUSINESS_HOURS.END) {
+     return { success: false, message: '選択された時間は営業時間外です。' };
+   }
+
+   // メニューの所要時間から終了時間を計算
+   const duration = menuInfo.duration || 60; // デフォルト60分
+   const endDateTime = new Date(reservationDateTime.getTime() + duration * 60 * 1000);
+   
+   // 営業時間終了時刻を超えるかチェック
+   const businessEndTime = new Date(reservationDateTime);
+   businessEndTime.setHours(BUSINESS_HOURS.END, 0, 0, 0);
+   if (endDateTime > businessEndTime) {
+     return { success: false, message: '選択された時間とメニューの組み合わせでは営業時間を超えてしまいます。' };
+   }
+
+   // --- 空き状況再チェック（競合回避）---
+   const reservationsSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_NAMES.RESERVATIONS);
+   if (!reservationsSheet) {
+     return { success: false, message: 'システムエラーが発生しました。予約シートが見つかりません。' };
+   }
+   
+   // 指定時間帯の予約数をカウント
+   const overlappingCount = getCurrentStaffCount(reservationDateTime, endDateTime);
+   
+   if (overlappingCount >= BUSINESS_HOURS.MAX_SLOTS) {
+     console.warn(`予約数上限に達しています: ${reservationData.date} ${reservationData.time}, 現在の予約数: ${overlappingCount}/${BUSINESS_HOURS.MAX_SLOTS}`);
+     return { success: false, message: `申し訳ありません、選択された時間帯の予約数が上限（${BUSINESS_HOURS.MAX_SLOTS}件）に達しています。別の日時を選択してください。` };
+   }
+
+   // --- 予約処理実行 ---
+   // 予約ID生成
+   const reservationId = Utilities.formatDate(now, 'GMT+9', 'MMddHHmmss') + Math.random().toString(36).substring(2, 8);
+   const creationTime = now;
+   
+   // スタッフへのメモを取得
+   const customerNotes = reservationData.notes || "";
+   
+   // スプレッドシートに追記
+   reservationsSheet.appendRow([
+     reservationId,          // 予約ID [0]
+     reservationData.userId, // UID [1]
+     userInfo.name,          // 氏名 [2]
+     userInfo.phone,         // 電話番号 [3]
+     reservationData.menuId, // メニューID [4] - 変更
+     "none",                 // スタッフID [5]
+     reservationDateTime,    // 予約日時 [6]
+     endDateTime,            // 終了時間 [7]
+     creationTime,           // 予約作成日時 [8]
+     false,                  // リマインド送信済み [9]
+     false,                  // キャンセル [10]
+     null,                   // キャンセル日時 [11] ← 追加！
+     menuInfo.price || 0,    // 金額（メニューから取得） [12] - 変更
+     menuInfo.name,          // メニュー名 [13] - 変更
+     duration,               // メニュー所要時間 [14] - 変更
+     customerNotes           // スタッフへのメモ [15]
+   ]);
+   console.log(`スプレッドシートに予約追加: ID=${reservationId}, メニュー=${menuInfo.name}, メモ=${customerNotes ? "あり" : "なし"}`);
+
+// Googleカレンダーに登録
+   try {
+     const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+     if (calendar) {
+       const eventTitle = `${userInfo.name}様 / ${menuInfo.name}`;
+       const eventDescription = `予約ID: ${reservationId}\n内容: ${menuInfo.name}\n金額: ${menuInfo.price}円\n所要時間: ${duration}分\n\n【スタッフへのメモ】\n${customerNotes || "なし"}`;
+       calendar.createEvent(eventTitle, reservationDateTime, endDateTime, { description: eventDescription });
+       console.log(`Googleカレンダーにイベント追加: ${eventTitle}`);
+     } else {
+       console.error(`カレンダーが見つかりません (ID: ${CALENDAR_ID})`);
+     }
+   } catch (calendarError) {
+     console.error(`カレンダー登録エラー (予約ID: ${reservationId}):`, calendarError, calendarError.stack);
+     // カレンダー登録失敗は予約自体は成功とするが、ログには残す
+   }
+
+   // 新規予約メール通知を送信
+   try {
+     sendNewReservationEmail(
+       {
+         id: reservationId,
+         date: reservationData.date,
+         time: reservationData.time,
+         endTime: Utilities.formatDate(endDateTime, 'Asia/Tokyo', 'HH:mm'),
+         notes: customerNotes
+       },
+       userInfo,
+       menuInfo
+     );
+   } catch (emailError) {
+     console.error(`新規予約メール通知エラー (予約ID: ${reservationId}):`, emailError, emailError.stack);
+     // メール送信失敗は予約自体の成功には影響しない
+   }
+   
+   // LINEで予約完了通知
+   /***
+   // 以下の予約完了通知はPush APIを使用するため、コメントアウトして実行されないようにします　【編集箇所】
+   try {
+     const formattedDate = formatDateJapanese(reservationDateTime);
+     
+     // 予約確定のFlexメッセージ部分
+     const flexMessage = {
+       type: "flex",
+       altText: "予約が確定しました",
+       contents: {
+         type: "bubble",
+         header: {
+           type: "box",
+           layout: "vertical",
+           contents: [
+             {
+               type: "text",
+               text: "予約確定のお知らせ",
+               weight: "bold",
+               size: "md",
+               color: "#FFFFFF"
+             }
+           ],
+           backgroundColor: "#2EB900"
+         },
+         hero: {
+           type: "image",
+           url: "https://image.freepik.com/free-photo/salon-hairdresser-styling-hair-beauty-professional_1139-823.jpg",
+           size: "full",
+           aspectRatio: "20:13",
+           aspectMode: "cover"
+         },
+         body: {
+           type: "box",
+           layout: "vertical",
+           contents: [
+             {
+               type: "text",
+               text: "ご予約ありがとうございます",
+               weight: "bold",
+               size: "md",
+               wrap: true
+             },
+             {
+               type: "box",
+               layout: "vertical",
+               margin: "lg",
+               spacing: "md",
+               contents: [
+                 {
+                   type: "box",
+                   layout: "baseline",
+                   spacing: "md",
+                   contents: [
+                     {
+                       type: "text",
+                       text: "日時",
+                       color: "#aaaaaa",
+                       size: "sm",
+                       flex: 2
+                     },
+                     {
+                       type: "text",
+                       text: `${formattedDate} ${reservationData.time}～${Utilities.formatDate(endDateTime, 'Asia/Tokyo', 'HH:mm')}`,
+                       wrap: true,
+                       color: "#666666",
+                       size: "sm",
+                       flex: 8,
+                       weight: "regular"
+                     }
+                   ]
+                 },
+                 {
+                   type: "box",
+                   layout: "baseline",
+                   spacing: "md",
+                   contents: [
+                     {
+                       type: "text",
+                       text: "内容", 
+                       color: "#aaaaaa",
+                       size: "sm",
+                       flex: 2
+                     },
+                     {
+                       type: "text",
+                       text: `${menuInfo.name} (${duration}分)`,
+                       wrap: true,
+                       color: "#666666",
+                       size: "sm",
+                       flex: 8,
+                       weight: "regular"
+                     }
+                   ]
+                 },
+                 {
+                   type: "box",
+                   layout: "baseline",
+                   spacing: "md",
+                   contents: [
+                     {
+                       type: "text",
+                       text: "料金",
+                       color: "#aaaaaa",
+                       size: "sm",
+                       flex: 2
+                     },
+                     {
+                       type: "text",
+                       text: `¥${menuInfo.price.toLocaleString()}`,
+                       wrap: true,
+                       color: "#666666",
+                       size: "sm",
+                       flex: 8,
+                       weight: "regular"
+                     }
+                   ]
+                 },
+                 {
+                   type: "box",
+                   layout: "baseline",
+                   spacing: "md",
+                   contents: [
+                     {
+                       type: "text",
+                       text: "予約ID",
+                       color: "#aaaaaa",
+                       size: "sm",
+                       flex: 2
+                     },
+                     {
+                       type: "text",
+                       text: reservationId,
+                       wrap: true,
+                       color: "#666666",
+                       size: "sm",
+                       flex: 8,
+                       weight: "regular"
+                     }
+                   ]
+                 },
+                 {
+                   type: "box",
+                   layout: "baseline",
+                   spacing: "md",
+                   contents: [
+                     {
+                       type: "text",
+                       text: "メモ",
+                       color: "#aaaaaa",
+                       size: "sm",
+                       flex: 2
+                     },
+                     {
+                       type: "text",
+                       text: customerNotes || "なし",
+                       wrap: true,
+                       color: "#666666",
+                       size: "sm",
+                       flex: 8,
+                       weight: "regular"
+                     }
+                   ]
+                 }
+               ]
+             }
+           ]
+         },
+         footer: {
+           type: "box",
+           layout: "vertical",
+           spacing: "sm",
+           contents: [
+             {
+               type: "text",
+               text: "前日に確認メッセージをお送りします。",
+               wrap: true,
+               size: "sm"
+             },
+             {
+               type: "text",
+               text: "ご来店をお待ちしております。",
+               wrap: true,
+               size: "sm"
+             }
+           ],
+           flex: 0
+         },
+         styles: {
+           footer: {
+             separator: true
+           }
+         }
+       }
+     };
+     
+     // Flex Messageを送信
+     const url = 'https://api.line.me/v2/bot/message/push';
+     const headers = {
+       'Content-Type': 'application/json; charset=UTF-8',
+       'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN,
+     };
+     const payload = {
+       to: reservationData.userId,
+       messages: [flexMessage]
+     };
+     const options = {
+       method: 'post',
+       headers: headers,
+       payload: JSON.stringify(payload),
+       muteHttpExceptions: true
+     };
+
+     const response = UrlFetchApp.fetch(url, options);
+     console.log(`予約完了Flex Message送信: UserID=${reservationData.userId}, ResponseCode=${response.getResponseCode()}`);
+     
+   } catch (lineError) {
+     console.error(`予約完了LINE通知エラー (予約ID: ${reservationId}):`, lineError, lineError.stack);
+     // LINE通知失敗も予約自体は成功とする
+   }
+   ***/
+
+   // 成功レスポンス
+   return {
+     success: true,
+     message: '予約が完了しました。',
+     reservationInfo: { // クライアント側での表示用に情報を返す
+       id: reservationId,
+       date: reservationData.date,
+       time: reservationData.time,
+       endTime: Utilities.formatDate(endDateTime, 'Asia/Tokyo', 'HH:mm'),
+       menuId: reservationData.menuId,
+       menuName: menuInfo.name,
+       duration: duration,
+       price: menuInfo.price,
+       notes: customerNotes
+     }
+   };
+
+ } catch (error) {
+   console.error('createReservationでエラー:', error, error.stack);
+   return { success: false, message: '予約処理中に予期せぬエラーが発生しました。' };
+ } finally {
+   try {
+     if (lock.hasLock()) {
+       lock.releaseLock();
+     }
+   } catch (lockError) {
+     console.error('ロック解放エラー:', lockError);
+   }
+ }
+}
+
+/**
+* 予約キャンセル完了時のFlexメッセージを生成する関数
+* @param {string} reservationId - キャンセルした予約ID
+* @param {string} date - 予約日付（YYYY-MM-DD形式）
+* @param {string} time - 予約時間（HH:MM形式）
+* @param {string} formattedDate - 日本語フォーマット日付（例: 2025年4月15日（火））
+* @return {object} - LINE Flex Messageオブジェクト
+*/
+function createCancellationFlexMessage(reservationId, date, time, formattedDate) {
+ // formattedDateが指定されていない場合は日付から生成
+ if (!formattedDate) {
+   const dateObj = new Date(`${date}T${time}:00`);
+   const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
+   formattedDate = `${dateObj.getFullYear()}年${dateObj.getMonth() + 1}月${dateObj.getDate()}日（${dayNames[dateObj.getDay()]}）`;
+ }
+
+ // キャンセル完了のFlexメッセージ
+ const flexMessage = {
+   type: "flex",
+   altText: "予約キャンセル完了",
+   contents: {
+     type: "bubble",
+     header: {
+       type: "box",
+       layout: "vertical",
+       contents: [
+         {
+           type: "text",
+           text: "予約キャンセル完了",
+           weight: "bold",
+           size: "md",
+           color: "#FFFFFF"
+         }
+       ],
+       backgroundColor: "#333333" // キャンセルなので暗め系
+     },
+     body: {
+       type: "box",
+       layout: "vertical",
+       contents: [
+         {
+           type: "text",
+           text: "以下の予約のキャンセルが完了しました",
+           weight: "bold",
+           size: "md",
+           wrap: true
+         },
+         {
+           type: "box",
+           layout: "vertical",
+           margin: "lg",
+           spacing: "md",
+           contents: [
+             {
+               type: "box",
+               layout: "baseline",
+               spacing: "md",
+               contents: [
+                 {
+                   type: "text",
+                   text: "日時",
+                   color: "#aaaaaa",
+                   size: "sm",
+                   flex: 2
+                 },
+                 {
+                   type: "text",
+                   text: `${formattedDate} ${time}`,
+                   wrap: true,
+                   color: "#666666",
+                   size: "sm",
+                   flex: 8,
+                   weight: "regular"
+                 }
+               ]
+             },
+             {
+               type: "box",
+               layout: "baseline",
+               spacing: "md",
+               contents: [
+                 {
+                   type: "text",
+                   text: "内容", 
+                   color: "#aaaaaa",
+                   size: "sm",
+                   flex: 2
+                 },
+                 {
+                   type: "text",
+                   text: "パーソナルトレーニング",
+                   wrap: true,
+                   color: "#666666",
+                   size: "sm",
+                   flex: 8,
+                   weight: "regular"
+                 }
+               ]
+             },
+             {
+               type: "box",
+               layout: "baseline",
+               spacing: "md",
+               contents: [
+                 {
+                   type: "text",
+                   text: "予約ID",
+                   color: "#aaaaaa",
+                   size: "sm",
+                   flex: 2
+                 },
+                 {
+                   type: "text",
+                   text: reservationId,
+                   wrap: true,
+                   color: "#666666",
+                   size: "sm",
+                   flex: 8,
+                   weight: "regular"
+                 }
+               ]
+             }
+           ]
+         }
+       ]
+     },
+     footer: {
+       type: "box",
+       layout: "vertical",
+       spacing: "sm",
+       contents: [
+         {
+           type: "text",
+           text: "またのご予約をお待ちしております。",
+           wrap: true,
+           size: "sm"
+         },
+       ],
+       flex: 0
+     },
+     styles: {
+       footer: {
+         separator: true
+       }
+     }
+   }
+ };
+ 
+ return flexMessage;
+}
+
+/**
+* 予約をキャンセルする (クライアントサイドJSまたはLINEメッセージから呼び出される)
+* @param {string} reservationId - キャンセルする予約ID
+* @param {string} userId - 操作を行うユーザーのLINEユーザーID
+* @return {object} - { success: boolean, message: string }
+*/
+function cancelReservation(reservationId, userId) {
+ console.log(`cancelReservation呼び出し: ID=${reservationId}, User=${userId}`);
+ if (!reservationId || !userId) {
+   return { success: false, message: '予約IDまたはユーザーIDが指定されていません。' };
+ }
+
+ const lock = LockService.getScriptLock();
+ try {
+   lock.waitLock(15000); // 最大15秒待機
+
+   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+   const sheet = ss.getSheetByName(SHEET_NAMES.RESERVATIONS);
+   if (!sheet) {
+     console.error('予約情報シートが見つかりません。');
+     return { success: false, message: 'システムエラーが発生しました。(Sheet not found)' };
+   }
+   const data = sheet.getDataRange().getValues();
+   let reservationFound = false;
+   let reservationDetails = {};
+
+   // ヘッダーを除いて検索 (インデックス1から)
+   for (let i = 1; i < data.length; i++) {
+     // data[i][0]は予約ID, data[i][1]はUID, data[i][10]はキャンセル列
+     if (data[i][0] === reservationId) {
+       // ユーザーIDが一致するか、または管理者が操作する場合などを考慮（今回はユーザーID一致のみ）
+       if (data[i][1] === userId) {
+         reservationFound = true;
+          // すでにキャンセル済みかチェック
+          if (data[i][10] === true) {
+            console.log(`予約ID ${reservationId} は既にキャンセルされています。`);
+            return { success: false, message: 'この予約は既にキャンセルされています。' };
+          }
+          // 過去の予約はキャンセルできないようにする（任意）
+          const reservationDateTime = new Date(data[i][6]);
+          if (reservationDateTime < new Date()) {
+            console.log(`過去の予約 (${reservationId}) のキャンセル試行。`);
+            return { success: false, message: '過去の予約をキャンセルすることはできません。' };
+          }
+
+         // キャンセル処理実行
+         sheet.getRange(i + 1, 11).setValue(true); // キャンセル列 (11番目=K列) に true を設定
+         sheet.getRange(i + 1, 12).setValue(new Date()); // キャンセル日時列 (12番目=L列) に現在時刻を設定
+         console.log(`スプレッドシートで予約キャンセル: ID=${reservationId}`);
+
+         // 予約詳細を保持
+         let dateStr;
+         try {
+           dateStr = formatDate(reservationDateTime);
+         } catch (e) {
+           dateStr = `${reservationDateTime.getFullYear()}-${String(reservationDateTime.getMonth() + 1).padStart(2, '0')}-${String(reservationDateTime.getDate()).padStart(2, '0')}`;
+         }
+         
+         const timeStr = `${String(reservationDateTime.getHours()).padStart(2, '0')}:${String(reservationDateTime.getMinutes()).padStart(2, '0')}`;
+         
+         reservationDetails = {
+            date: dateStr,
+            time: timeStr
+         };
+
+         // Googleカレンダーからイベント削除
+         try {
+           const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+           if (calendar) {
+             // イベント検索: タイトルや説明に予約IDが含まれるものを探す
+             const events = calendar.getEvents(reservationDateTime, new Date(reservationDateTime.getTime() + 2 * 60 * 60 * 1000), { search: reservationId }); // 予約時刻周辺で検索
+             if (events.length > 0) {
+               events[0].deleteEvent(); // 最初に見つかったものを削除 (IDで完全一致が望ましい)
+               console.log(`Googleカレンダーからイベント削除: ID=${reservationId}`);
+             } else {
+               console.warn(`カレンダーイベントが見つかりません: ID=${reservationId}`);
+             }
+           } else {
+             console.error(`カレンダーが見つかりません (ID: ${CALENDAR_ID})`);
+           }
+         } catch (calendarError) {
+           console.error(`カレンダー削除エラー (予約ID: ${reservationId}):`, calendarError, calendarError.stack);
+           // カレンダー削除失敗はキャンセル自体は成功とする
+         }
+
+         /***
+         // LINEでキャンセル完了通知（Flexメッセージを使用）- Push APIを使用するため、コメントアウト　【編集箇所】
+         try {
+           // 日本語フォーマットの日付を生成
+           const formattedDate = formatDateJapanese(reservationDateTime);
+           
+           // Flexメッセージ生成
+           const flexMessage = createCancellationFlexMessage(
+             reservationId,
+             dateStr,
+             timeStr,
+             formattedDate
+           );
+           
+           // LINE Messaging APIでメッセージ送信
+           const url = 'https://api.line.me/v2/bot/message/push';
+           const headers = {
+             'Content-Type': 'application/json; charset=UTF-8',
+             'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN,
+           };
+           const payload = {
+             to: userId,
+             messages: [flexMessage]
+           };
+           const options = {
+             method: 'post',
+             headers: headers,
+             payload: JSON.stringify(payload),
+             muteHttpExceptions: true
+           };
+
+           const response = UrlFetchApp.fetch(url, options);
+           const responseCode = response.getResponseCode();
+           console.log(`キャンセル完了Flex Message送信: UserID=${userId}, ResponseCode=${responseCode}`);
+           
+           // Flexメッセージ送信が失敗した場合のフォールバック（通常のテキストメッセージ）
+           if (responseCode !== 200) {
+             const message = `【予約キャンセル完了】\n以下の予約がキャンセルされました。\n\n` +
+                           `予約ID: ${reservationId}\n` +
+                           `日時: ${formattedDate} ${timeStr}`;
+             sendLineMessage(userId, message);
+           }
+         } catch (lineError) {
+           console.error(`キャンセル完了LINE通知エラー (予約ID: ${reservationId}):`, lineError, lineError.stack);
+           // エラー時のフォールバック（通常のテキストメッセージ）
+           try {
+             const message = `【予約キャンセル完了】\n以下の予約がキャンセルされました。\n\n` +
+                          `予約ID: ${reservationId}\n` +
+                          `日時: ${reservationDetails.date} ${reservationDetails.time}`;
+             sendLineMessage(userId, message);
+           } catch (fallbackError) {
+             console.error(`フォールバックメッセージ送信エラー:`, fallbackError);
+           }
+         }
+         ***/
+
+         return { success: true, message: '予約をキャンセルしました。' };
+       } else {
+         // 予約IDは存在するが、ユーザーIDが一致しない場合
+         console.warn(`予約キャンセル権限なし: ID=${reservationId}, User=${userId}, Owner=${data[i][1]}`);
+         return { success: false, message: '指定された予約をキャンセルする権限がありません。' };
+       }
+     }
+   }
+
+   // ループを抜けても見つからなかった場合
+   if (!reservationFound) {
+     console.log(`キャンセル対象の予約が見つかりません: ID=${reservationId}`);
+     return { success: false, message: '指定された予約IDが見つかりません。' };
+   }
+
+ } catch (error) {
+   console.error('cancelReservationでエラー:', error, error.stack);
+   return { success: false, message: '予約キャンセル処理中に予期せぬエラーが発生しました。' };
+ } finally {
+   try {
+     if (lock.hasLock()) {
+       lock.releaseLock();
+     }
+   } catch (lockError) {
+     console.error('ロック解放エラー:', lockError);
+   }
+ }
+}
+
+
+/**
+ * 指定されたユーザーの有効な（キャンセルされておらず未来の）予約一覧を取得する
+ * @param {string} userId - LINEユーザーID
+ * @return {Array<object>} - 予約情報の配列
+ */
+function getUserReservations(userId) {
+  console.log(`getUserReservations呼び出し: User=${userId}`);
+  if (!userId) {
+     console.error("getUserReservations: userIdが指定されていません。");
+     return [];
+  }
+  
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_NAMES.RESERVATIONS);
+    if (!sheet) {
+      console.error('予約情報シートが見つかりません。');
+      initializeSystem();
+      return [];
+    }
+    
+    const data = sheet.getDataRange().getValues();
+    const reservations = [];
+    const now = new Date();
+
+    // ヘッダー行(0)をスキップし、1行目からループ
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      
+      // ユーザーIDが一致し、キャンセル列(10)がfalseまたは空であること
+      if (row[1] === userId && (row[10] === false || row[10] === '')) {
+        let reservationDateTime;
+        let endDateTime;
+        
+        // 日付がDateオブジェクトかStringかを確認
+        if (row[6] instanceof Date) {
+          reservationDateTime = row[6];
+        } else if (typeof row[6] === 'string') {
+          reservationDateTime = parseJapaneseDateTimeString(row[6]);
+          if (!reservationDateTime) {
+            // 通常の日付文字列としてパースを試みる
+            reservationDateTime = new Date(row[6]);
+          }
+        } else {
+          // どちらでもない場合はスキップ
+          console.warn(`行 ${i+1}: 予約日時の形式が無効です:`, row[6]);
+          continue;
+        }
+        
+        // 終了時間の処理
+        if (row[7] instanceof Date) {
+          endDateTime = row[7];
+        } else if (typeof row[7] === 'string') {
+          endDateTime = parseJapaneseDateTimeString(row[7]);
+          if (!endDateTime) {
+            // 通常の日付文字列としてパースを試みる
+            endDateTime = new Date(row[7]);
+          }
+        }
+        
+        // 未来の予約のみフィルタリング
+        if (reservationDateTime && !isNaN(reservationDateTime.getTime()) && reservationDateTime >= now) {
+          const dateStr = formatDateForScript(reservationDateTime);
+          const timeStr = formatTimeForScript(reservationDateTime);
+          const endTimeStr = endDateTime ? formatTimeForScript(endDateTime) : '';
+
+          reservations.push({
+            id: row[0],
+            date: dateStr,
+            time: timeStr,
+            endTime: endTimeStr,
+            description: row[13] || "ネイル予約",
+            duration: row[14] || SESSION_DURATION,
+            notes: row[15] || "",
+            price: row[12] || 0 
+          });
+        }
+      }
+    }
+
+    // 日付順にソート
+    reservations.sort((a, b) => {
+      const dateTimeA = new Date(`${a.date}T${a.time}`);
+      const dateTimeB = new Date(`${b.date}T${b.time}`);
+      return dateTimeA - dateTimeB;
+    });
+
+    console.log(`ユーザー (${userId}) の有効な予約 ${reservations.length} 件を取得`);
+    return reservations;
+
+  } catch (error) {
+    console.error('getUserReservationsでエラー:', error, error.stack);
+    return [];
+  }
+}
+
+/**
+* スプレッドシートから有効な（キャンセルされていない）全予約データを取得する
+* @return {Array<object>} - 有効な予約データの配列 {id, userId, startTime, endTime, ...}
+*/
+function getAllValidReservations() {
+ console.log('スプレッドシートから全予約データを読み込み中...');
+ try {
+   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+   const sheet = ss.getSheetByName(SHEET_NAMES.RESERVATIONS);
+   if (!sheet) {
+     console.error('getAllValidReservations: 予約シートが見つかりません');
+     return [];
+   }
+   
+   const data = sheet.getDataRange().getValues();
+   const reservations = [];
+   
+   // ヘッダー行(0)をスキップ
+   for (let i = 1; i < data.length; i++) {
+     const row = data[i];
+     const isCancelled = row[10]; // キャンセル列(10)
+
+     // キャンセルされておらず、必要なデータが揃っている場合
+     if (!isCancelled && row[0] && row[1] && row[6] && row[7]) {
+        let startTime, endTime;
+        
+        try {
+          startTime = new Date(row[6]);
+          endTime = new Date(row[7]);
+          
+          // 日付が有効かチェック
+          if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+            console.warn(`行 ${i+1}: 無効な日付をスキップ - 開始: ${row[6]}, 終了: ${row[7]}`);
+            continue;
+          }
+        } catch (dateError) {
+          console.warn(`行 ${i+1}: 日付解析エラーをスキップ - ${dateError.message}`);
+          continue;
+        }
+        
+        const duration = row[14] || SESSION_DURATION; // 所要時間
+
+        reservations.push({
+          id: row[0],
+          userId: row[1],
+          startTime: startTime,
+          endTime: endTime,
+          duration: duration,
+          menuName: row[13] || '未設定'
+        });
+     }
+   }
+   
+   console.log(`有効な予約 ${reservations.length} 件をシートから取得`);
+   return reservations;
+ } catch (error) {
+   console.error('getAllValidReservationsでエラー:', error, error.stack);
+   return [];
+ }
+}
+
+/**
+* 指定された週の予約空き状況を取得する (クライアントサイドJSから呼び出される)
+* @param {string} startDateStr - 週の開始日 (YYYY-MM-DD形式)
+* @return {Array<object>} - 各日の空き状況を含む配列
+*/
+function getWeeklyAvailability(startDateStr) {
+  console.log(`getWeeklyAvailability呼び出し: startDateStr=${startDateStr}`);
+  try {
+    // 日付文字列の処理
+    let startDate;
+    if (!startDateStr || typeof startDateStr !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(startDateStr)) {
+      console.warn(`無効な日付文字列: ${startDateStr}。本日の日付を使用します。`);
+      startDate = new Date();
+      startDate.setHours(0, 0, 0, 0);
+    } else {
+      startDate = new Date(startDateStr + 'T00:00:00');
+      if (isNaN(startDate.getTime())) {
+        console.warn(`日付のパースに失敗: ${startDateStr}。本日の日付を使用します。`);
+        startDate = new Date();
+        startDate.setHours(0, 0, 0, 0);
+      }
+    }
+    
+    // 週の終了日を計算
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 6);
+    endDate.setHours(23, 59, 59, 999);
+    
+    console.log(`処理対象の週: ${formatDate(startDate)} 〜 ${formatDate(endDate)}`);
+    
+    // スプレッドシートから予約データを取得
+    const allReservations = getAllValidReservations();
+    console.log(`取得した有効な予約数: ${allReservations.length}件`);
+    
+    // Googleカレンダーからイベントを取得
+    const calendarEvents = getCalendarEvents(startDate, endDate, CALENDAR_ID);
+    console.log(`Googleカレンダーから取得したイベント: ${calendarEvents.length}件`);
+    
+    const weeklyData = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const minBookableDate = new Date(today);
+    minBookableDate.setDate(today.getDate() + MIN_DAYS_AHEAD);
+    const maxBookableDate = new Date(today);
+    maxBookableDate.setDate(today.getDate() + DAYS_AHEAD);
+    
+    for (let i = 0; i < 7; i++) {
+      const currentDate = new Date(startDate);
+      currentDate.setDate(startDate.getDate() + i);
+      
+      const dateString = formatDate(currentDate);
+      const dayOfWeek = currentDate.getDay();
+      const isHoliday = CLOSED_DAYS.includes(dayOfWeek);
+      const isOutsideBookingRange = currentDate < minBookableDate || currentDate > maxBookableDate;
+      
+      const dayInfo = {
+        date: dateString,
+        dayName: ["日", "月", "火", "水", "木", "金", "土"][dayOfWeek],
+        isHoliday: isHoliday,
+        hours: []
+      };
+      
+      if (!isHoliday) {
+        // その日の予約をフィルタリング
+        const reservationsOnDate = allReservations.filter(r => {
+          try {
+            const reservationDate = formatDate(r.startTime);
+            return reservationDate === dateString;
+          } catch (error) {
+            console.warn(`予約データの日付フォーマットエラー:`, r, error);
+            return false;
+          }
+        });
+        
+        console.log(`${dateString}の予約数: ${reservationsOnDate.length}件`);
+        
+        // その日のカレンダーイベントをフィルタリング
+        const eventsOnDate = calendarEvents.filter(event => {
+          try {
+            if (event.isAllDay) {
+              return formatDate(event.startTime) === dateString;
+            }
+            
+            const eventStartDate = formatDate(event.startTime);
+            const eventEndDate = formatDate(event.endTime);
+            return (eventStartDate === dateString || eventEndDate === dateString);
+          } catch (error) {
+            console.warn(`カレンダーイベントの日付フォーマットエラー:`, event, error);
+            return false;
+          }
+        });
+        
+        // カレンダーイベントから予約IDを持つものを特定
+        const reservationIdsFromCalendar = new Set();
+        const nonReservationEvents = [];
+        
+        eventsOnDate.forEach(event => {
+          // イベントの説明から予約IDを抽出
+          const reservationIdMatch = event.description?.match(/予約ID:\s*([^\n\s]+)/);
+          if (reservationIdMatch) {
+            // 予約IDがある = 実際の予約
+            reservationIdsFromCalendar.add(reservationIdMatch[1]);
+          } else {
+            // 予約IDがない = スタッフ休暇などの枠占有イベント
+            nonReservationEvents.push(event);
+            console.log(`枠占有イベント検出: ${event.title} (${formatDate(event.startTime)} ${event.startTime.toTimeString().substr(0,5)})`);
+          }
+        });
+        
+        console.log(`${dateString}の予約IDなしイベント数: ${nonReservationEvents.length}件`);
+        
+        // 営業時間内の時間間隔で空き状況を計算
+        for (let h = BUSINESS_HOURS.START; h < BUSINESS_HOURS.END; h++) {
+          for (let m = 0; m < 60; m += BUSINESS_HOURS.TIME_INTERVAL) {
+            const timeString = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+            const slotDateTime = new Date(`${dateString}T${timeString}:00`);
+            const slotEndDateTime = new Date(slotDateTime.getTime() + BUSINESS_HOURS.TIME_INTERVAL * 60 * 1000);
+            
+            let availableCount = 0;
+            let durationAvailable = true;
+            
+            if (!isOutsideBookingRange && slotDateTime >= new Date()) {
+              
+              // スロット開始時刻での同時施術数チェック
+              let concurrentAtSlotStart = 0;
+              
+              // スプレッドシートの予約をカウント
+              reservationsOnDate.forEach(r => {
+                try {
+                  if (r.startTime <= slotDateTime && slotDateTime < r.endTime) {
+                    concurrentAtSlotStart++;
+                  }
+                } catch (error) {
+                  console.warn(`予約時間チェックエラー:`, r, error);
+                }
+              });
+              
+              // 予約IDを持たないカレンダーイベント（スタッフ休暇など）をカウント
+              nonReservationEvents.forEach(event => {
+                try {
+                  if (event.isAllDay) {
+                    // 終日イベントは1席占有
+                    concurrentAtSlotStart++;
+                  } else if (event.startTime <= slotDateTime && slotDateTime < event.endTime) {
+                    // 時間指定イベントで該当時間帯なら1席占有
+                    concurrentAtSlotStart++;
+                  }
+                } catch (error) {
+                  console.warn(`カレンダーイベントチェックエラー:`, event, error);
+                }
+              });
+              
+              // 利用可能席数を計算
+              availableCount = Math.max(0, BUSINESS_HOURS.MAX_SLOTS - concurrentAtSlotStart);
+              
+              // セッション時間での最大同時施術数チェック
+              if (availableCount > 0) {
+                const sessionEndTime = new Date(slotDateTime.getTime() + SESSION_DURATION * 60 * 1000);
+                const businessEndTime = new Date(`${dateString}T${String(BUSINESS_HOURS.END).padStart(2, '0')}:00:00`);
+                
+                if (sessionEndTime > businessEndTime) {
+                  durationAvailable = false;
+                } else {
+                  let maxConcurrentDuringSession = 0;
+                  const checkInterval = 15 * 60 * 1000;
+                  
+                  for (let checkTime = slotDateTime.getTime(); checkTime < sessionEndTime.getTime(); checkTime += checkInterval) {
+                    const currentCheckTime = new Date(checkTime);
+                    let concurrentCount = 0;
+                    
+                    // スプレッドシートの予約をカウント
+                    reservationsOnDate.forEach(r => {
+                      try {
+                        if (r.startTime <= currentCheckTime && currentCheckTime < r.endTime) {
+                          concurrentCount++;
+                        }
+                      } catch (error) {
+                        console.warn(`セッション時間チェックエラー:`, r, error);
+                      }
+                    });
+                    
+                    // 予約IDを持たないカレンダーイベントをカウント
+                    nonReservationEvents.forEach(event => {
+                      try {
+                        if (event.isAllDay) {
+                          concurrentCount++;
+                        } else if (event.startTime <= currentCheckTime && currentCheckTime < event.endTime) {
+                          concurrentCount++;
+                        }
+                      } catch (error) {
+                        console.warn(`セッション時間カレンダーチェックエラー:`, event, error);
+                      }
+                    });
+                    
+                    maxConcurrentDuringSession = Math.max(maxConcurrentDuringSession, concurrentCount);
+                  }
+                  
+                  if (maxConcurrentDuringSession >= BUSINESS_HOURS.MAX_SLOTS) {
+                    durationAvailable = false;
+                  }
+                }
+              } else {
+                durationAvailable = false;
+              }
+            } else {
+              availableCount = 0;
+              durationAvailable = false;
+            }
+            
+            dayInfo.hours.push({
+              time: timeString,
+              available: availableCount,
+              durationAvailable: durationAvailable
+            });
+          }
+        }
+      }
+      weeklyData.push(dayInfo);
+    }
+    
+    console.log(`週間予約状況生成完了: ${startDateStr}`);
+    return weeklyData;
+  } catch (error) {
+    console.error('getWeeklyAvailabilityでエラー:', error, error.stack);
+    return [];
+  }
+}
+
+/**
+ * 指定されたユーザーIDの過去の予約情報（キャンセルされていないもの）を取得する関数
+ * @param {string} userId ユーザーのUID
+ * @return {Array<object>} 過去の予約情報の配列
+ */
+function getUserPastReservations(userId) {
+  console.log(`getUserPastReservations呼び出し: User=${userId}`);
+  if (!userId) {
+    console.error("getUserPastReservations: userIdが指定されていません。");
+    return [];
+  }
+  
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_NAMES.RESERVATIONS);
+    if (!sheet) {
+      console.error('予約情報シートが見つかりません。');
+      return [];
+    }
+    
+    const data = sheet.getDataRange().getValues();
+    const pastReservations = [];
+    const now = new Date();
+
+    // ヘッダー行(0)をスキップし、1行目からループ
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      
+      // ユーザーIDが一致し、キャンセル列(10)がfalseまたは空であること
+      if (row[1] === userId && (row[10] === false || row[10] === '')) {
+        let reservationDateTime;
+        let endDateTime;
+        
+        // 日付がDateオブジェクトかStringかを確認
+        if (row[6] instanceof Date) {
+          reservationDateTime = row[6];
+        } else if (typeof row[6] === 'string') {
+          reservationDateTime = parseJapaneseDateTimeString(row[6]);
+          if (!reservationDateTime) {
+            // 通常の日付文字列としてパースを試みる
+            reservationDateTime = new Date(row[6]);
+          }
+        } else {
+          // どちらでもない場合はスキップ
+          console.warn(`行 ${i+1}: 予約日時の形式が無効です:`, row[6]);
+          continue;
+        }
+        
+        // 終了時間の処理
+        if (row[7] instanceof Date) {
+          endDateTime = row[7];
+        } else if (typeof row[7] === 'string') {
+          endDateTime = parseJapaneseDateTimeString(row[7]);
+          if (!endDateTime) {
+            // 通常の日付文字列としてパースを試みる
+            endDateTime = new Date(row[7]);
+          }
+        }
+        
+        // 過去の予約のみフィルタリング
+        if (reservationDateTime && !isNaN(reservationDateTime.getTime()) && reservationDateTime < now) {
+          const dateStr = formatDateForScript(reservationDateTime);
+          const timeStr = formatTimeForScript(reservationDateTime);
+          const endTimeStr = endDateTime ? formatTimeForScript(endDateTime) : '';
+
+          pastReservations.push({
+            id: row[0],
+            date: dateStr,
+            time: timeStr,
+            endTime: endTimeStr,
+            description: row[13] || "ネイル予約",
+            duration: row[14] || SESSION_DURATION,
+            notes: row[15] || "",
+            price: row[12] || 0 
+          });
+        }
+      }
+    }
+
+    // 日付順にソート（新しい順）
+    pastReservations.sort((a, b) => {
+      const dateTimeA = new Date(`${a.date}T${a.time}`);
+      const dateTimeB = new Date(`${b.date}T${b.time}`);
+      return dateTimeB - dateTimeA; // 降順ソート
+    });
+
+    console.log(`ユーザー (${userId}) の過去の予約 ${pastReservations.length} 件を取得`);
+    return pastReservations;
+
+  } catch (error) {
+    console.error('getUserPastReservationsでエラー:', error, error.stack);
+    return [];
+  }
+}
+
+
+/**
+ * スプレッドシートから指定ユーザーの全ての予約情報を取得するヘルパー関数
+ * @param {string} userId ユーザーのUID
+ * @return {Array<object>} 全予約情報の配列（整形済み）
+ */
+function getAllUserReservationsFromSheet(userId) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_NAMES.RESERVATIONS);
+    if (!sheet) {
+      console.error(`シート "${SHEET_NAMES.RESERVATIONS}" が見つかりません。`);
+      return [];
+    }
+    
+    // 以下の処理はそのまま...
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      console.log("シートにデータがありません（ヘッダーのみ）。");
+      return [];
+    }
+    const headers = data.shift().map(h => String(h).trim());
+
+    // 列インデックスの特定
+    const colIndices = {};
+    const requiredCols = ['予約ID', 'UID', '予約日時', '終了日時', 'キャンセル済', 'メニュー名', 'スタッフへのメモ'];
+    requiredCols.forEach(colName => {
+      const index = headers.indexOf(colName);
+      if (index === -1) {
+        console.error(`必須カラム "${colName}" がシート "${SHEET_NAMES.RESERVATIONS}" のヘッダーに見つかりません。`);
+        throw new Error(`必須カラム "${colName}" が見つかりません。`);
+      }
+      colIndices[colName] = index;
+    });
+
+    // --------------------------
+
+    const userReservations = data
+      .filter(row => row[colIndices['UID']] === userId)
+      .map((row, index) => {
+        const rowNumForLog = index + 2; // ログ表示用の行番号 (ヘッダーが1行目)
+        try {
+          const reservationDateTimeString = row[colIndices['予約日時']];
+          const endDateTimeString = row[colIndices['終了日時']];
+          const isCancelledValue = row[colIndices['キャンセル済']];
+
+          // ▼▼▼ 日本語形式の日時文字列を Date オブジェクトに変換 ▼▼▼
+          const reservationDateTime = parseJapaneseDateTimeString(reservationDateTimeString);
+          const endDateTime = parseJapaneseDateTimeString(endDateTimeString);
+          // ▲▲▲ --------------------------------------------- ▲▲▲
+
+          // 予約日時が有効か確認
+          if (!reservationDateTime) {
+             console.warn(`行 ${rowNumForLog}: 予約日時の解析または日付が無効です (${reservationDateTimeString})。この予約をスキップします。予約ID: ${row[colIndices['予約ID']]}`);
+             return null; // 無効な日付のデータは除外
+          }
+          // 終了日時が無効な場合は警告のみ（予約自体は有効な場合がある）
+          if (!endDateTime) {
+             console.warn(`行 ${rowNumForLog}: 終了日時の解析または日付が無効です (${endDateTimeString})。予約ID: ${row[colIndices['予約ID']]}`);
+             // endDateTime は null のまま処理を続ける
+          }
+
+          // キャンセル済フラグの解釈
+          const isCancelled = isCancelledValue === true || String(isCancelledValue).toUpperCase() === 'TRUE';
+
+          const reservationData = {
+            id: row[colIndices['予約ID']] || `Row${rowNumForLog}`,
+            userId: userId,
+            dateTime: reservationDateTime, // 変換後の Date オブジェクト
+            date: formatDateForScript(reservationDateTime), // yyyy-MM-dd
+            time: formatTimeForScript(reservationDateTime),   // HH:mm
+            endDateTime: endDateTime, // 変換後の Date オブジェクト (または null)
+            endTime: endDateTime ? formatTimeForScript(endDateTime) : '', // HH:mm または空文字
+            isCancelled: isCancelled,
+            description: row[colIndices['メニュー名']] || '未設定',
+            notes: row[colIndices['スタッフへのメモ']] || ''
+          };
+          return reservationData;
+        } catch (e) {
+           console.error(`行 ${rowNumForLog} の処理中にエラーが発生しました: `, e, "Row data:", row);
+           return null; // エラーが発生した行は除外
+        }
+      })
+      .filter(item => item !== null); // エラーや無効な日付で null になった要素を除外
+
+    return userReservations;
+
+  } catch (error) {
+    console.error("getAllUserReservationsFromSheet で予期せぬエラー:", error);
+    return [];
+  }
+}
+
+function parseJapaneseDateTimeString(dateString) {
+  if (!dateString || typeof dateString !== 'string') {
+    return null;
+  }
+
+  try {
+    // 日付がすでにDateオブジェクトの場合
+    if (dateString instanceof Date) {
+      return dateString;
+    }
+    
+    // 通常の標準的な日付形式の場合は直接パースを試みる
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/) || 
+        dateString.match(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}/)) {
+      const parsedDate = new Date(dateString);
+      if (!isNaN(parsedDate.getTime())) {
+        return parsedDate;
+      }
+    }
+
+    // パターン1: "2025年04月12日（土）11:00" のような形式
+    const regex1 = /(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*（.*?）)?(?:\s*(\d{1,2}):(\d{2}))?/;
+    const match1 = dateString.match(regex1);
+    if (match1) {
+      const year = parseInt(match1[1], 10);
+      const month = parseInt(match1[2], 10) - 1; // Dateオブジェクトの月は0から始まる
+      const day = parseInt(match1[3], 10);
+      const hours = match1[4] ? parseInt(match1[4], 10) : 0; // 時刻がなければ0時
+      const minutes = match1[5] ? parseInt(match1[5], 10) : 0; // 時刻がなければ0分
+
+      const parsedDate = new Date(year, month, day, hours, minutes, 0, 0);
+      if (!isNaN(parsedDate.getTime())) {
+        return parsedDate;
+      }
+    }
+
+    // パターン2: "2025年4月12日 11:00" のようなスペース区切り形式
+    const regex2 = /(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日\s+(\d{1,2}):(\d{2})/;
+    const match2 = dateString.match(regex2);
+    if (match2) {
+      const year = parseInt(match2[1], 10);
+      const month = parseInt(match2[2], 10) - 1;
+      const day = parseInt(match2[3], 10);
+      const hours = parseInt(match2[4], 10);
+      const minutes = parseInt(match2[5], 10);
+
+      const parsedDate = new Date(year, month, day, hours, minutes, 0, 0);
+      if (!isNaN(parsedDate.getTime())) {
+        return parsedDate;
+      }
+    }
+
+    // パターン3: "2025年4月12日" のような日付のみの形式
+    const regex3 = /(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/;
+    const match3 = dateString.match(regex3);
+    if (match3) {
+      const year = parseInt(match3[1], 10);
+      const month = parseInt(match3[2], 10) - 1;
+      const day = parseInt(match3[3], 10);
+
+      const parsedDate = new Date(year, month, day, 0, 0, 0, 0);
+      if (!isNaN(parsedDate.getTime())) {
+        return parsedDate;
+      }
+    }
+    
+    // どのパターンにも一致しない場合は直接パースを試みる（最後の手段）
+    const directParsedDate = new Date(dateString);
+    if (!isNaN(directParsedDate.getTime())) {
+      return directParsedDate;
+    }
+    
+    console.warn(`parseJapaneseDateTimeString: どのパターンにも一致しない日付形式: "${dateString}"`);
+    return null;
+  } catch (e) {
+    console.error(`parseJapaneseDateTimeStringでのエラー: "${dateString}"`, e);
+    return null;
+  }
+}
+
+
+/**
+ * 日付オブジェクトをYYYY-MM-DD形式の文字列に変換する補助関数（GAS用）
+ */
+function formatDateForScript(dateObj) {
+  if (dateObj instanceof Date && !isNaN(dateObj)) {
+    try {
+       return Utilities.formatDate(dateObj, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    } catch (e) {
+        console.error("formatDateForScriptでのフォーマットエラー:", e, "Date:", dateObj);
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+  }
+  return '';
+}
+
+/**
+ * 時刻オブジェクトまたは文字列をHH:MM形式の文字列に変換する補助関数（GAS用）
+ */
+function formatTimeForScript(timeObj) {
+   if (timeObj instanceof Date && !isNaN(timeObj)) {
+    try {
+       return Utilities.formatDate(timeObj, Session.getScriptTimeZone(), "HH:mm");
+    } catch (e) {
+        console.error("formatTimeForScriptでのフォーマットエラー:", e, "Date:", timeObj);
+        const hours = String(timeObj.getHours()).padStart(2, '0');
+        const minutes = String(timeObj.getMinutes()).padStart(2, '0');
+        return `${hours}:${minutes}`;
+    }
+  }
+  return '';
+}
+
+// ----------------------------------------
+// リマインダー機能
+// ----------------------------------------
+
+/**
+* 予約リマインダー用のFlexメッセージを生成する関数
+* @param {string} userName - ユーザー名
+* @param {string} reservationId - 予約ID
+* @param {string} formattedDate - 日本語フォーマット日付（例: 2025年4月15日（火））
+* @param {string} timeStr - 予約時間（HH:MM形式）
+* @param {string} menuName - メニュー名
+* @param {number} duration - 所要時間（分）
+* @return {object} - LINE Flex Messageオブジェクト
+*/
+function createReminderFlexMessage(userName, reservationId, formattedDate, timeStr, menuName = "ご予約メニュー", duration = 60) {
+ // 終了時間を計算
+ const [hours, minutes] = timeStr.split(':').map(num => parseInt(num, 10));
+ const startTime = new Date();
+ startTime.setHours(hours, minutes, 0, 0);
+ const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
+ const endTimeStr = `${String(endTime.getHours()).padStart(2, '0')}:${String(endTime.getMinutes()).padStart(2, '0')}`;
+
+ // リマインダーのFlexメッセージ
+ const flexMessage = {
+   type: "flex",
+   altText: "明日の予約リマインダー",
+   contents: {
+     type: "bubble",
+     header: {
+       type: "box",
+       layout: "vertical",
+       contents: [
+         {
+           type: "text",
+           text: "明日のご予約をお知らせします。",
+           weight: "bold",
+           size: "md",
+           color: "#FFFFFF"
+         }
+       ],
+       backgroundColor: "#4285F4" // リマインダーは青色系
+     },
+     body: {
+       type: "box",
+       layout: "vertical",
+       contents: [
+         {
+           type: "text",
+           text: `ご来店お待ちしております。`,
+           weight: "bold",
+           size: "md",
+           wrap: true,
+           margin: "sm"
+         },
+         {
+           type: "box",
+           layout: "vertical",
+           margin: "lg",
+           spacing: "sm",
+           contents: [
+             {
+               type: "box",
+               layout: "baseline",
+               spacing: "sm",
+               contents: [
+                 {
+                   type: "text",
+                   text: "日時",
+                   color: "#000000",
+                   size: "sm",
+                   flex: 2
+                 },
+                 {
+                   type: "text",
+                   text: `${formattedDate}`,
+                   wrap: true,
+                   color: "#000000",
+                   size: "sm",
+                   flex: 8,
+                 }
+               ]
+             },
+             {
+               type: "box",
+               layout: "baseline",
+               spacing: "sm",
+               contents: [
+                 {
+                   type: "text",
+                   text: "時間",
+                   color: "#000000",
+                   size: "sm",
+                   flex: 2
+                 },
+                 {
+                   type: "text",
+                   text: `${timeStr}～${endTimeStr}`,
+                   wrap: true,
+                   color: "#000000",
+                   size: "sm",
+                   flex: 8
+                 }
+               ]
+             },
+             {
+               type: "box",
+               layout: "baseline",
+               spacing: "sm",
+               contents: [
+                 {
+                   type: "text",
+                   text: "内容", 
+                   color: "#000000",
+                   size: "sm",
+                   flex: 2
+                 },
+                 {
+                   type: "text",
+                   text: menuName, // メニュー名を表示
+                   wrap: true,
+                   color: "#000000",
+                   size: "sm",
+                   flex: 8
+                 }
+               ]
+             },
+             {
+               type: "box",
+               layout: "baseline",
+               spacing: "sm",
+               margin: "md",
+               contents: [
+                 {
+                   type: "text",
+                   text: "予約ID",
+                   color: "#000000",
+                   size: "xs",
+                   flex: 2
+                 },
+                 {
+                   type: "text",
+                   text: reservationId,
+                   wrap: true,
+                   color: "#000000",
+                   size: "xs",
+                   flex: 8
+                 }
+               ]
+             }
+           ]
+         }
+       ]
+     },
+     footer: {
+       type: "box",
+       layout: "vertical",
+       spacing: "sm",
+       contents: [
+         {
+           type: "text",
+           text: "ご都合が悪くなった場合は、お早めにキャンセルをお願いします。",
+           wrap: true,
+           size: "sm",
+           color: "#666666"
+         }
+       ],
+       flex: 0
+     },
+     styles: {
+       footer: {
+         separator: true
+       }
+     }
+   }
+ };
+ 
+ return flexMessage;
+}
+
+/**
+* 予約前日にリマインドメッセージを送信する（トリガーで定期実行）
+* このメソッドはPush APIを使用するため、修正なしで維持します
+*/
+function sendReminders() {
+ console.log('sendReminders実行開始');
+ try {
+   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+   const sheet = ss.getSheetByName(SHEET_NAMES.RESERVATIONS);
+   if (!sheet) {
+     console.error('リマインダー: 予約情報シートが見つかりません。');
+     return;
+   }
+   const data = sheet.getDataRange().getValues();
+   
+   // タイムゾーンを明示的に取得
+   const timezone = Session.getScriptTimeZone();
+   
+   // 明日の日付を文字列形式で取得 (YYYY-MM-DD形式)
+   const now = new Date();
+   const tomorrow = new Date(now);
+   tomorrow.setDate(now.getDate() + 1);
+   const tomorrowDateStr = Utilities.formatDate(tomorrow, timezone, "yyyy-MM-dd");
+
+   let reminderCount = 0;
+   // ヘッダー行(0)をスキップ
+   for (let i = 1; i < data.length; i++) {
+     const row = data[i];
+     const reservationId = row[0]; // 予約ID列(0)
+     const isCancelled = row[10]; // キャンセル列(10)
+     const reminderSent = row[9]; // リマインド送信済み列(9)
+     
+     // 予約日時のパース (より堅牢に)
+     let reservationDateTime;
+     if (row[6] instanceof Date) {
+       reservationDateTime = row[6];
+     } else {
+       try {
+         reservationDateTime = new Date(row[6]);
+       } catch (e) {
+         console.error(`行${i+1}の予約日時パースエラー:`, e);
+         continue; // エラーの場合はスキップ
+       }
+     }
+     
+     if (isNaN(reservationDateTime.getTime())) {
+       console.error(`行${i+1}の予約日時が無効です:`, row[6]);
+       continue; // 無効な日付はスキップ
+     }
+     
+     // 予約日付を文字列形式で取得 (YYYY-MM-DD形式)
+     const reservationDateStr = Utilities.formatDate(reservationDateTime, timezone, "yyyy-MM-dd");
+     const sessionDuration = row[13] || SESSION_DURATION; // トレーニング時間(13)
+
+     // キャンセルされておらず、リマインド未送信で、予約が明日である場合
+     if (!isCancelled && !reminderSent && reservationDateStr === tomorrowDateStr) {
+       const userId = row[1]; // ユーザーID列(1)
+       const userName = row[2]; // 氏名列(2)
+       const timeStr = `${String(reservationDateTime.getHours()).padStart(2, '0')}:${String(reservationDateTime.getMinutes()).padStart(2, '0')}`;
+       const menuName = row[13]; // メニュー名(12)
+       const sessionDuration = row[14]; // セッション時間(13)
+
+       // 日付フォーマット
+       const formattedDate = formatDateJapanese(reservationDateTime);
+
+       // Flexメッセージを生成
+       const flexMessage = createReminderFlexMessage(
+         userName,
+         reservationId,
+         formattedDate,
+         timeStr,
+         menuName, // メニュー名を渡す
+         sessionDuration
+       );
+
+       try {
+         // LINE Messaging APIでFlexメッセージを送信
+         const url = 'https://api.line.me/v2/bot/message/push';
+         const headers = {
+           'Content-Type': 'application/json; charset=UTF-8',
+           'Authorization': 'Bearer ' + LINE_ACCESS_TOKEN,
+         };
+         const payload = {
+           to: userId,
+           messages: [flexMessage]
+         };
+         const options = {
+           method: 'post',
+           headers: headers,
+           payload: JSON.stringify(payload),
+           muteHttpExceptions: true
+         };
+
+         const response = UrlFetchApp.fetch(url, options);
+         const responseCode = response.getResponseCode();
+         
+         // ログを詳しく出力
+         console.log('=== Flexメッセージ送信結果 ===');
+         console.log('Response Code:', responseCode);
+         console.log('Response Body:', response.getContentText());
+         console.log('User ID:', userId);
+         console.log('Reservation ID:', reservationId);
+
+         if (responseCode === 200) {
+           // 送信成功したらスプレッドシートのフラグを更新
+           sheet.getRange(i + 1, 10).setValue(true); // リマインド送信済み列(10)にtrueを設定
+           reminderCount++;
+           console.log(`リマインドFlexメッセージ送信成功: User=${userId}, ReservationID=${reservationId}`);
+         } else {
+           // フォールバック: 通常のテキストメッセージを送信
+           const message = `【予約リマインダー】\n\n` +
+                         `${userName}様\n\n` +
+                         `明日のご予約についてお知らせします。\n\n` +
+                         `日時: ${formattedDate} ${timeStr}\n` +
+                         `内容: ※直接店舗にご確認ください。\n\n` +
+                         `ご来店をお待ちしております。\n` +
+                         `ご都合が悪くなった場合は、お早めに「予約確認」からキャンセルをお願いします。`;
+           const success = sendLineMessage(userId, message);
+           
+           if (success) {
+             sheet.getRange(i + 1, 10).setValue(true); // リマインド送信済み列(10)にtrueを設定
+             reminderCount++;
+             console.log(`リマインドテキストメッセージ送信成功: User=${userId}, ReservationID=${reservationId}`);
+           } else {
+             console.error(`リマインド送信完全失敗: User=${userId}, ReservationID=${reservationId}`);
+           }
+         }
+       } catch (sendError) {
+         console.error(`リマインド送信処理エラー: User=${userId}, ReservationID=${reservationId}`, sendError);
+         
+         // エラー時のフォールバック処理
+         const message = `【予約リマインダー】\n\n` +
+                       `${userName}様\n\n` +
+                       `明日のご予約についてお知らせします。\n\n` +
+                       `日時: ${formattedDate} ${timeStr}\n` +
+                       `内容: ※直接店舗にご確認ください。\n\n` +
+                       `ご来店をお待ちしております。\n` +
+                       `ご都合が悪くなった場合は、お早めに「予約確認」からキャンセルをお願いします。`;
+         const success = sendLineMessage(userId, message);
+         
+         if (success) {
+           sheet.getRange(i + 1, 10).setValue(true); // リマインド送信済み列(10)にtrueを設定
+           reminderCount++;
+           console.log(`リマインドフォールバック送信成功: User=${userId}, ReservationID=${reservationId}`);
+         }
+       }
+       
+       // API制限回避のため少し待機
+       Utilities.sleep(300);
+     }
+   }
+   console.log(`sendReminders実行完了: ${reminderCount}件送信`);
+ } catch (error) {
+   console.error('sendRemindersでエラー:', error, error.stack);
+ }
+}
+
+/**
+* sendReminders関数を実行するための時間ベースのトリガーを設定する
+*/
+function setupRemindTrigger() {
+ // 既存のsendRemindersトリガーを削除
+ const triggers = ScriptApp.getProjectTriggers();
+ triggers.forEach(trigger => {
+   if (trigger.getHandlerFunction() === 'sendReminders') {
+     ScriptApp.deleteTrigger(trigger);
+     console.log('既存のリマインダートリガーを削除しました。');
+   }
+ });
+
+ // 毎日指定した時刻（例: 午前9時）に実行するトリガーを作成
+ ScriptApp.newTrigger('sendReminders')
+   .timeBased()
+   .everyDays(1)
+   .atHour(9) // 例: 毎日午前9時に実行
+   .inTimezone('Asia/Tokyo') // タイムゾーンを指定
+   .create();
+ console.log('新しいリマインダートリガー（毎日午前9時）を設定しました。');
+}
+
+// ----------------------------------------
+// 初期化・ヘルパー関数
+// ----------------------------------------
+
+/**
+* システム初期化（スプレッドシートのシートとヘッダーを作成）
+*/
+function initializeSystem() {
+ try {
+   const ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(SPREADSHEET_ID); // アクティブまたはIDで開く
+   let sheetCreated = false;
+
+   // ユーザー情報シート
+   if (!ss.getSheetByName(SHEET_NAMES.USERS)) {
+     const usersSheet = ss.insertSheet(SHEET_NAMES.USERS);
+     // 新しいヘッダー（カナ、職業、趣味を追加）
+     usersSheet.appendRow(['UID', '氏名', 'カナ', '電話番号', 'メールアドレス', '性別', '生年月日', '登録日時', '知ったきっかけ', '職業', '趣味']);
+     usersSheet.setFrozenRows(1);
+     console.log(`${SHEET_NAMES.USERS}シートを作成しました。`);
+     sheetCreated = true;
+   }
+
+   // 予約情報シート
+   if (!ss.getSheetByName(SHEET_NAMES.RESERVATIONS)) {
+     const reservationsSheet = ss.insertSheet(SHEET_NAMES.RESERVATIONS);
+     reservationsSheet.appendRow(['予約ID', 'UID', '氏名', '電話番号', 'メニューID', 'スタッフID', '予約日時', '終了日時', '予約作成日時', 'リマインド送信済', 'キャンセル済', 'キャンセル日時', '金額', 'メニュー名', '所要時間(分)', 'スタッフへのメモ']);
+     reservationsSheet.setFrozenRows(1);
+     // 日付列の書式設定
+     reservationsSheet.getRange('G:H').setNumberFormat('yyyy/mm/dd hh:mm');
+     reservationsSheet.getRange('I:I').setNumberFormat('yyyy/mm/dd hh:mm:ss');
+     reservationsSheet.getRange('L:L').setNumberFormat('yyyy/mm/dd hh:mm:ss');
+     console.log(`${SHEET_NAMES.RESERVATIONS}シートを作成しました。`);
+     sheetCreated = true;
+   }
+
+   // 設定シート
+   if (!ss.getSheetByName(SHEET_NAMES.SETTINGS)) {
+     const settingsSheet = ss.insertSheet(SHEET_NAMES.SETTINGS);
+     settingsSheet.appendRow(['設定項目', '値']);
+     settingsSheet.appendRow(['定休日 (曜日番号)', CLOSED_DAYS.join(',')]);
+     settingsSheet.appendRow(['予約開始日数前', MIN_DAYS_AHEAD]);
+     settingsSheet.appendRow(['予約可能日数', DAYS_AHEAD]);
+     settingsSheet.setFrozenRows(1);
+     console.log(`${SHEET_NAMES.SETTINGS}シートを作成しました。`);
+     sheetCreated = true;
+   }
+
+   // メニュー情報シート（新規追加）
+   if (!ss.getSheetByName(SHEET_NAMES.MENUS)) {
+     const menusSheet = ss.insertSheet(SHEET_NAMES.MENUS);
+     menusSheet.appendRow([
+       'メニューID', 
+       'メニュー名', 
+       '所要時間(分)', 
+       '価格(円)', 
+       '説明', 
+       '表示順', 
+       'カテゴリー',
+       '画像URL'
+     ]);
+     
+     // サンプルデータの追加（実際の運用では削除または変更）
+     menusSheet.appendRow(['cut', 'カット', 60, 4000, 'シャンプー・ブロー込み', 1, 'カット']);
+     menusSheet.appendRow(['color', 'カラー', 90, 6000, 'シャンプー・ブロー込み', 2, 'カラー']);
+     menusSheet.appendRow(['perm', 'パーマ', 120, 8000, 'シャンプー・ブロー込み', 3, 'パーマ']);
+     menusSheet.appendRow(['treatment', 'トリートメント', 40, 3000, 'シャンプー・ブロー込み', 4, 'トリートメント']);
+     
+     menusSheet.setFrozenRows(1);
+     console.log(`${SHEET_NAMES.MENUS}シートを作成しました。`);
+     sheetCreated = true;
+   }
+
+   if (sheetCreated) {
+      SpreadsheetApp.flush(); // 変更を即時反映
+      console.log('システム初期化完了。');
+   }
+
+ } catch (error) {
+   console.error('システム初期化中にエラーが発生しました:', error, error.stack);
+   throw new Error('システム初期化に失敗しました: ' + error.message);
+ }
+}
+
+/**
+ * ユーザー用の一時トークンを生成して保存する
+ * @param {string} userId - LINE ユーザーID
+ * @return {string} - 生成されたトークン
+ */
+function generateTokenForUser(userId) {
+  // ランダムなトークンを生成
+  const token = Utilities.getUuid();
+  
+  // 有効期限を設定（現在時刻から30分後）
+  const expiryTime = new Date();
+  expiryTime.setMinutes(expiryTime.getMinutes() + 30);
+  
+  // スプレッドシートに保存
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let tokenSheet = ss.getSheetByName('一時トークン');
+  
+  // シートがなければ作成
+  if (!tokenSheet) {
+    tokenSheet = ss.insertSheet('一時トークン');
+    tokenSheet.appendRow(['トークン', 'ユーザーID', '有効期限', '作成日時']);
+  }
+  
+  // トークン情報を保存
+  tokenSheet.appendRow([
+    token,
+    userId,
+    expiryTime,
+    new Date()
+  ]);
+  
+  return token;
+}
+
+/**
+ * トークンからユーザーIDを取得
+ * @param {string} token - チェックするトークン
+ * @return {string|null} - 有効なトークンの場合はユーザーID、無効な場合はnull
+ */
+function getUserIdFromToken(token) {
+  if (!token) return null;
+  
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const tokenSheet = ss.getSheetByName('一時トークン');
+  if (!tokenSheet) return null;
+  
+  const now = new Date();
+  const data = tokenSheet.getDataRange().getValues();
+  
+  // ヘッダー行をスキップして検索
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === token) { // トークン列
+      const expiryTime = new Date(data[i][2]); // 有効期限列
+      
+      // 有効期限内かチェック
+      if (now <= expiryTime) {
+        return data[i][1]; // ユーザーID列を返す
+      } else {
+        // 期限切れの場合は削除対象としてマーク
+        return null;
+      }
+    }
+  }
+  
+  return null; // トークンが見つからない
+}
+
+/**
+ * 定期的に期限切れトークンを削除するクリーンアップ関数
+ */
+function cleanupExpiredTokens() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const tokenSheet = ss.getSheetByName('一時トークン');
+  if (!tokenSheet) return;
+  
+  const now = new Date();
+  const data = tokenSheet.getDataRange().getValues();
+  const rowsToDelete = [];
+  
+  // 期限切れの行を特定（後ろから検索して削除対象をマーク）
+  for (let i = data.length - 1; i > 0; i--) { // ヘッダー行を除く
+    const expiryTime = new Date(data[i][2]); // 有効期限列
+    if (now > expiryTime) {
+      rowsToDelete.push(i + 1); // シートの行番号（インデックス+1）
+    }
+  }
+  
+  // 特定した行を削除
+  for (const rowNum of rowsToDelete) {
+    tokenSheet.deleteRow(rowNum);
+  }
+}
+
+/**
+ * メニュー情報を全て取得する関数
+ * @return {Array} メニュー情報の配列
+ */
+function getAllMenus() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_NAMES.MENUS);
+    if (!sheet) {
+      console.error('メニュー情報シートが見つかりません。');
+      return [];
+    }
+    
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      console.log('メニューデータがありません。');
+      return [];
+    }
+    
+    const headers = data[0];
+    const menus = [];
+    
+    // ヘッダー行をスキップしてデータ行を処理
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const menu = {
+        id: row[0],
+        name: row[1],
+        duration: row[2],
+        price: row[3],
+        description: row[4],
+        displayOrder: row[5],
+        category: row[6] || '未分類',
+        imageUrl: row[7] || '' // 画像URLを追加
+      };
+      menus.push(menu);
+    }
+    
+    // 表示順でソート
+    menus.sort((a, b) => a.displayOrder - b.displayOrder);
+    
+    return menus;
+  } catch (error) {
+    console.error('メニュー情報取得でエラー:', error, error.stack);
+    return [];
+  }
+}
+
+/**
+ * 指定されたメニューIDの情報を取得する関数
+ * @param {string} menuId - メニューID
+ * @return {object|null} メニュー情報、見つからない場合はnull
+ */
+function getMenuById(menuId) {
+  if (!menuId) return null;
+  
+  try {
+    const menus = getAllMenus();
+    return menus.find(menu => menu.id === menuId) || null;
+  } catch (error) {
+    console.error(`メニュー情報取得エラー (ID: ${menuId}):`, error, error.stack);
+    return null;
+  }
+}
+
+/**
+ * 指定された時間帯の予約スタッフ数を取得する（修正版）
+ * @param {Date} startTime - 開始時間
+ * @param {Date} endTime - 終了時間
+ * @return {number} - 予約数
+ */
+function getCurrentStaffCount(startTime, endTime) {
+  console.log(`getCurrentStaffCount呼び出し: ${startTime} - ${endTime}`);
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_NAMES.RESERVATIONS);
+    if (!sheet) {
+      console.error('getCurrentStaffCount: 予約シートが見つかりません');
+      return 0;
+    }
+    
+    const data = sheet.getDataRange().getValues();
+    
+    // 新規予約期間中の最大同時施術数を計算
+    let maxConcurrentCount = 0;
+    
+    // 5分間隔でチェック（より細かくチェックするため）
+    const checkInterval = 5 * 60 * 1000; // 5分をミリ秒に変換
+    
+    for (let checkTime = startTime.getTime(); checkTime < endTime.getTime(); checkTime += checkInterval) {
+      const currentCheckTime = new Date(checkTime);
+      let concurrentCount = 0;
+      
+      // この時刻に施術中の予約をカウント
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        const isCancelled = row[10]; // キャンセル列
+        
+        // キャンセルされていない予約のみチェック
+        if (!isCancelled && row[6] && row[7]) {
+          let existingStartTime, existingEndTime;
+          
+          try {
+            existingStartTime = new Date(row[6]);
+            existingEndTime = new Date(row[7]);
+            
+            // 日付が有効かチェック
+            if (isNaN(existingStartTime.getTime()) || isNaN(existingEndTime.getTime())) {
+              continue;
+            }
+          } catch (dateError) {
+            continue;
+          }
+          
+          // 【修正されたロジック】指定時刻に施術中かチェック
+          if (existingStartTime <= currentCheckTime && currentCheckTime < existingEndTime) {
+            concurrentCount++;
+          }
+        }
+      }
+      
+      // 最大同時施術数を更新
+      maxConcurrentCount = Math.max(maxConcurrentCount, concurrentCount);
+      
+      console.log(`時刻 ${currentCheckTime.toLocaleTimeString('ja-JP')}: ${concurrentCount}人施術中`);
+    }
+    
+    console.log(`新規予約期間中の最大同時施術数: ${maxConcurrentCount}/${BUSINESS_HOURS.MAX_SLOTS}`);
+    
+    return maxConcurrentCount;
+  } catch (error) {
+    console.error('getCurrentStaffCountでエラー:', error, error.stack);
+    return BUSINESS_HOURS.MAX_SLOTS; // エラー時は満席として扱う
+  }
+}
+
+// ----------------------------------------
+// セットアップ・テスト用関数
+// ----------------------------------------
+
+/**
+* システム全体のセットアップを実行する（手動実行用）
+* スプレッドシート初期化、トリガー設定、メール通知設定を行う
+*/
+function setupSystem() {
+ try {
+   console.log('システムセットアップ開始...');
+   
+   // スプレッドシート初期化
+   initializeSystem();
+   
+   // リマインダートリガー設定
+   setupRemindTrigger();
+   
+   // メール通知設定の初期化
+   try {
+     const properties = PropertiesService.getScriptProperties();
+     // 初期メール設定がない場合はデフォルト値を設定
+     if (!properties.getProperty('EMAIL_NOTIFICATION_TO')) {
+       properties.setProperties({
+         'EMAIL_NOTIFICATION_ENABLED': 'false',  // 初期状態では無効
+         'EMAIL_NOTIFICATION_TO': 'owner@example.com',  // 仮の管理者メール
+         'EMAIL_NOTIFICATION_FROM': ''
+       });
+       console.log('メール通知設定の初期値を設定しました。');
+     }
+   } catch (emailSetupError) {
+     console.error('メール通知設定の初期化でエラー:', emailSetupError);
+   }
+   
+   console.log('システムセットアップ完了。設定を行ってください。');
+   
+   // セットアップ完了メッセージ（設定項目を明確に記載）
+   const alertMessage = `
+システムセットアップが完了しました。
+
+【必要な設定項目】
+1. スクリプトプロパティで以下を設定：
+   - LINE_ACCESS_TOKEN（LINEアクセストークン）
+   - CALENDAR_ID（GoogleカレンダーID）
+   - SPREADSHEET_ID（スプレッドシートID）
+
+2. メール通知設定（オプション）：
+   - EMAIL_NOTIFICATION_ENABLED（true/false）
+   - EMAIL_NOTIFICATION_TO（通知先メールアドレス）
+   - EMAIL_NOTIFICATION_FROM（送信者メール、任意）
+
+設定方法：
+「ファイル」→「プロジェクトの設定」→「スクリプト プロパティ」
+
+メール通知機能をテストするには：
+testEmailNotification() 関数を実行してください。
+   `;
+   
+   SpreadsheetApp.getUi().alert(alertMessage);
+   
+ } catch (error) {
+   console.error('setupSystemでエラー:', error, error.stack);
+   SpreadsheetApp.getUi().alert('システムセットアップ中にエラーが発生しました。\n詳細: ' + error.message);
+ }
+}
