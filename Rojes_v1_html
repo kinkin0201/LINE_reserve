@@ -1,0 +1,3108 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+  <title>ROJES 予約受付</title>
+  <style>
+    /* --- 基本スタイル --- */
+    body {
+      padding: 30px;
+      font-family: 'Hiragino Kaku Gothic ProN', 'メイリオ', sans-serif;
+      font-size: 28px;
+      line-height: 1.6;
+    }
+
+    .form-container {
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 0;
+      background-color: #fff;
+    }
+
+    /* --- ヘッダー部分 --- */
+    .header-image-container {
+      width: 100%;
+      margin-bottom: 0;
+      text-align: center;
+    }
+
+    .header-image {
+      max-width: 100%;
+      height: auto;
+      margin-bottom: 60px;
+    }
+
+    /* --- タブナビゲーション --- */
+    .nav-tabs {
+      padding: 0px;
+    }
+
+    .nav-tabs .nav-link {
+      font-size: 32px;
+      padding: 16px 24px;
+      color: #6c757d;
+      font-weight: normal;
+      border: 1px solid #dee2e6;
+      border-bottom: none;
+      margin-right: 8px;
+      border-radius: 8px 8px 0 0;
+      transition: all 0.3s ease;
+    }
+
+    .nav-tabs .nav-link:hover {
+      background-color: rgba(13, 110, 253, 0.1);
+      color: #0d6efd;
+    }
+
+    .nav-tabs .nav-link.active {
+      color: #fff;
+      background-color: #0d6efd;
+      font-weight: bold;
+      border: 3px solid #0d6efd;
+      box-shadow: 0 -2px 5px rgba(0,0,0,0.1);
+    }
+
+    .nav-link {
+      cursor: pointer;
+    }
+
+    /* タブコンテンツエリア */
+    .tab-content {
+      border: 3px solid #0d6efd;
+      padding: 16px;
+      background-color: #fff;
+    }
+
+    .tab-pane {
+      padding-top: 16px;
+    }
+
+    /* --- カレンダー関連 --- */
+    .calendar-container {
+      position: relative;
+      margin-bottom: 20px;
+      max-height: 1280px;
+      overflow: auto;
+      border: 1px solid #dee2e6;
+    }
+
+    /* テーブル全体の設定 */
+    .calendar-container table {
+      width: auto;
+      border-collapse: separate;
+      border-spacing: 0;
+      table-layout: fixed;
+    }
+
+    /* テーブルヘッダー（曜日行）を固定 */
+    .calendar-container thead {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background-color: #f8f9fa;
+    }
+
+    /* 時間列（左端の列）を固定 */
+    .calendar-container .time-header {
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      background-color: #f8f9fa;
+      min-width: 120px;
+      text-align: center;
+      font-weight: bold;
+      padding: 12px;
+      vertical-align: middle;
+      width: 80px;
+      font-size: 32px;
+    }
+
+    /* 左上のセル（時間と曜日の交差部分）を両方固定 */
+    .calendar-container thead .time-header {
+      position: sticky;
+      top: 0;
+      left: 0;
+      z-index: 3;
+      background-color: #f8f9fa;
+    }
+
+    /* セルのサイズを調整 */
+    .calendar-container th,
+    .calendar-container td {
+      min-width: 100px;
+      height: 60px;
+    }
+
+    /* ボックスシャドウで固定部分の境界を強調 */
+    .calendar-container thead th {
+      box-shadow: 0 2px 2px -1px rgba(0,0,0,0.1);
+    }
+
+    .calendar-container .time-header {
+      box-shadow: 2px 0 2px -1px rgba(0,0,0,0.1);
+    }
+
+    .calendar-container thead .time-header {
+      box-shadow: 2px 2px 2px -1px rgba(0,0,0,0.1);
+    }
+
+    /* 曜日ヘッダー */
+    .day-header {
+      text-align: center;
+      font-weight: bold;
+      padding: 12px;
+      background-color: #f8f9fa;
+      font-size: 32px;
+    }
+
+    /* 土日の色付け */
+    .day-header.sunday {
+      color: #dc3545;
+    }
+
+    .day-header.saturday {
+      color: #0d6efd;
+    }
+
+    .today {
+      background-color: #fff3cd;
+    }
+
+    .holiday-cell {
+      background-color: #f8d7da;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .holiday-text {
+      font-size: 28px;
+      color: #6c757d;
+    }
+
+    /* 時間枠のスタイル調整 */
+    .time-slot {
+      cursor: pointer;
+      padding: 10px;
+      border-radius: 6px;
+      text-align: center;
+      transition: background-color 0.2s;
+      border: 1px solid #ddd;
+      margin: 2px;
+      min-width: 92px;
+      font-size: 32px;
+    }
+
+    .time-slot:hover {
+      background-color: #e9ecef;
+    }
+
+    /* 選択された時間枠のスタイル */
+    .time-slot.selected {
+      background-color: #0d6efd;
+      color: white;
+      border-color: #0d6efd;
+      font-weight: bold;
+      box-shadow: 0 0px 5px rgba(13, 110, 253, 0.5);
+    }
+
+    /* 選択可能スロットのスタイル */
+    .time-slot.available {
+      background-color: #e2f0ff;
+      color: #0a58ca;
+      border-color: #b6d4fe;
+    }
+
+    .time-slot.available:hover {
+      background-color: #0d6efd;
+      color: white;
+      border-color: #0d6efd;
+    }
+
+    /* 選択不可スロットのスタイル */
+    .time-slot.unavailable {
+      background-color: #f8f9fa;
+      color: #adb5bd;
+      cursor: not-allowed;
+      border-color: #e9ecef;
+      font-weight: bold;
+      opacity: 0.7;
+    }
+
+    /* 週ナビゲーションボタン */
+    .week-nav-button {
+      background: none;
+      border: none;
+      color: #007bff;
+      font-size: 28px;
+      font-weight: bold;
+      padding: 10px 0;
+      transition: color 0.2s;
+      display: flex;
+      align-items: center;
+    }
+
+    .week-nav-button:hover:not(:disabled) {
+      color: #0056b3;
+      text-decoration: none;
+    }
+
+    .week-nav-button:disabled {
+      color: #6c757d;
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+
+    .week-nav-button .bi {
+      font-size: 28px;
+    }
+
+    #prevWeek, #nextWeek, #todayBtn {
+      padding: 10px 16px;
+      font-size: 28px;
+    }
+
+    /* 本日ボタン */
+    #todayBtn {
+      background-color: #0d6efd;
+      border-color: #0d6efd;
+      font-weight: bold;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    #todayBtn:hover:not(:disabled) {
+      background-color: #0d47a1;
+      border-color: #0d47a1;
+    }
+
+    #todayBtn:disabled {
+      opacity: 0.6;
+    }
+
+    /* 現在の週表示 */
+    #currentWeek {
+      font-size: 32px;
+      font-weight: bold;
+      padding: 0 20px;
+    }
+
+    /* --- フォーム要素 --- */
+    .form-label {
+      font-size: 28px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+
+    .form-select,
+    .form-control {
+      font-size: 28px;
+      padding: 12px;
+      height: auto;
+    }
+
+    .form-control-plaintext {
+      font-size: 36px;
+    }
+
+    /* 選択されている日時の表示 */
+    #selectedDateTime {
+      font-size: 48px;
+      font-weight: bold;
+      padding: 12px;
+    }
+
+    #selectedDateTime.alert-info {
+      background-color: #e3f2fd;
+      border-color: #90caf9;
+      color: #0d47a1;
+      font-size: 40px;
+      font-weight: bold;
+      padding: 16px;
+      border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+      transition: all 0.3s ease;
+      border-left: 8px solid #1976d2;
+    }
+
+    /* 予約確定ボタン */
+    #submitBtn {
+      background-color: #00B900;
+      color: white;
+      padding: 20px;
+      font-size: 40px;
+      font-weight: bold;
+      margin-top: 20px;
+      margin-bottom: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      transition: all 0.3s ease;
+      border: none;
+    }
+
+    #submitBtn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+      background-color: #00a000;
+    }
+
+    #submitBtn:active:not(:disabled) {
+      transform: translateY(1px);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    #submitBtn:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+      box-shadow: none;
+      opacity: 0.7;
+    }
+
+    /* --- カード関連 --- */
+    .card-header h4 {
+      margin-top: 20px !important;
+      margin-bottom: 20px !important;
+      margin-left: 0 !important;
+      margin-right: 0 !important;
+      border: none !important;
+    }
+
+    /* 予約カード */
+    .reservation-card {
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+      overflow: hidden;
+    }
+
+    .reservation-card:hover {
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      transform: translateY(-2px);
+    }
+
+    .reservation-card .card-header {
+      font-size: 32px;
+      padding: 12px 16px;
+      font-weight: bold;
+    }
+
+    .reservation-card .card-title {
+      font-size: 36px;
+      margin-bottom: 16px;
+      font-weight: bold;
+    }
+
+    .reservation-card .card-text {
+      font-size: 36px;
+      margin-bottom: 10px;
+      font-weight: bold;
+    }
+
+    .reservation-card .card-text strong {
+      font-weight: bold;
+    }
+
+    .reservation-card .cancel-btn,
+    .reservation-card .history-status {
+      font-size: 28px;
+      padding: 10px 20px;
+      border-radius: 10px;
+    }
+
+    .reservation-card .bi {
+      font-size: 110%;
+      vertical-align: middle;
+    }
+
+    .reservation-card .bg-warning.text-dark {
+      padding: 6px 12px;
+      border-radius: 5px;
+      font-size: 28px;
+    }
+
+    .reservation-card .card-header small {
+      font-size: 28px;
+      font-weight: bold;
+    }
+
+    /* 過去予約カード */
+    .past-reservation {
+      opacity: 0.75;
+      background-color: #f8f9fa;
+    }
+
+    .past-reservation .card-header {
+      background-color: #e9ecef;
+      color: #6c757d;
+    }
+
+    /* --- 予約リスト --- */
+    .reservations-list, 
+    .history-list {
+      margin-top: 20px;
+    }
+
+    .list-group-item {
+      padding: 16px;
+    }
+
+    .list-group-item h5 {
+      font-size: 32px;
+    }
+
+    .list-group-item p {
+      font-size: 28px;
+    }
+
+    .cancel-btn {
+      padding: 8px 16px;
+      font-size: 28px;
+    }
+
+    /* --- モーダル関連 --- */
+    /* キャンセル確認モーダル */
+    #cancelConfirmModal .modal-dialog {
+      max-width: 90%;
+      margin: 1.75rem auto;
+    }
+
+    #cancelConfirmModal .modal-content {
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    #cancelConfirmModal .modal-header {
+      padding: 24px;
+    }
+
+    #cancelConfirmModal .modal-title {
+      font-size: 32px;
+      font-weight: bold;
+    }
+
+    #cancelConfirmModal .modal-body {
+      font-size: 36px;
+      padding: 24px;
+    }
+
+    #cancelConfirmModal .modal-footer .btn {
+      font-size: 32px;
+      padding: 12px 24px;
+      border-radius: 8px;
+    }
+
+    /* 予約完了モーダル */
+    #reservationCompleteModal .modal-dialog {
+      max-width: 90%;
+      margin: 1.75rem auto;
+    }
+
+    #reservationCompleteModal .modal-header .modal-title {
+      font-size: 40px;
+      font-weight: bold;
+    }
+
+    #reservationCompleteModal .modal-body {
+      font-size: 40px;
+    }
+
+    #reservationCompleteModal .modal-body h4 {
+      font-size: 40px;
+    }
+
+    #reservationCompleteModal .modal-body p {
+      font-size: 36px;
+    }
+
+    #reservationCompleteModal .modal-body .alert {
+      font-size: 24px;
+    }
+
+    /* 予約確定モーダル */
+    #confirmationModal .modal-dialog {
+      max-width: 80%;
+      margin: 1.75rem auto;
+    }
+
+    #confirmationModal .modal-content {
+      border-radius: 15px;
+      overflow: hidden;
+    }
+
+    #confirmationModal .modal-header {
+      background-color: #00B900;
+      color: white;
+      padding: 16px 20px;
+      font-size: 36px;
+      font-weight: bold;
+    }
+
+    #confirmationModal .modal-title {
+      font-size: 40px;
+      font-weight: bold;
+    }
+
+    #confirmationModal .modal-body {
+      padding: 20px;
+      font-size: 36px;
+    }
+
+    #confirmationModal .modal-footer {
+      padding: 16px 20px;
+    }
+
+    #confirmationModal .btn-secondary {
+      font-size: 40px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: bold;
+    }
+
+    #confirmationModal .btn-success {
+      background-color: #00B900;
+      font-size: 40px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: none;
+      font-weight: bold;
+    }
+
+    /* --- その他要素 --- */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      padding: 8px;
+      text-align: center;
+      border: 1px solid #dee2e6;
+      font-size: 28px;
+    }
+
+    h4 {
+      font-size: 40px;
+      font-weight: bold;
+    }
+
+    h4:has(span.text-danger) {
+      margin-top: 40px;
+      margin-bottom: 24px;
+    }
+
+    .emphasis {
+      font-size: 40px;
+      font-weight: bold;
+    }
+
+    .alert {
+      font-size: 28px;
+      padding: 12px;
+    }
+
+    #result {
+      margin-top: 20px;
+    }
+
+    #loadingIndicator {
+      text-align: center;
+      padding: 20px;
+      font-size: 28px;
+    }
+
+    .spinner-border {
+      width: 2rem;
+      height: 2rem;
+    }
+
+    hr.my-4 {
+      margin-top: 60px !important;
+      margin-bottom: 40px !important;
+    }
+
+    /* --- メニューボタン関連のスタイル --- */
+    /* カテゴリータグのスタイル */
+    .category-tags-container {
+      margin-bottom: 10px;
+    }
+
+    .menu-category-tag {
+      display: inline-block;
+      background-color: #fcdce4;
+      color: #b6526f;
+      font-size: 28px;
+      font-weight: bold;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-right: 8px;
+      margin-bottom: 8px;
+      white-space: nowrap;
+    }
+
+    /* カレンダーを横幅100%に設定 */
+    .calendar-container table {
+      width: 100% !important;
+      table-layout: auto !important;
+    }
+    
+    /* セルサイズの調整 */
+    .calendar-container th,
+    .calendar-container td {
+      min-width: auto !important;
+      width: auto !important;
+      padding: 4px !important;
+    }
+    
+    /* 時間列の幅を調整 */
+    .calendar-container .time-header {
+      min-width: 80px !important;
+      width: 80px !important;
+    }
+    
+    /* 曜日ヘッダーのフォントサイズ調整 */
+    .day-header {
+      font-size: 26px !important;
+    }
+    
+    /* 時間スロットのサイズ調整 */
+    .time-slot {
+      min-width: auto !important;
+      padding: 8px 2px !important;
+    }
+    
+    /* スマホ表示時のさらなる調整 */
+    @media (max-width: 767px) {
+      .day-header {
+        font-size: 20px !important;
+      }
+      
+      .calendar-container .time-header {
+        font-size: 20px !important;
+      }
+      
+      .time-slot {
+        font-size: 24px !important;
+      }
+    }
+
+    .menu-button {
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border: 2px solid #dee2e6;
+      overflow: hidden;
+      border-radius: 24px;
+      min-height: 160px; /* 画像がないので高さを縮小 */
+    }
+    
+    .menu-button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      border-color: #adb5bd;
+    }
+    
+    .menu-button.selected {
+      border-color: #0d6efd;
+      box-shadow: 0 6px 12px rgba(13, 110, 253, 0.35);
+      background-color: #f0f7ff;
+    }
+    
+    .menu-name {
+      font-size: 32px;
+      font-weight: bold;
+      margin-bottom: 10px;
+      line-height: 1.3;
+    }
+    
+    .menu-info {
+      font-size: 28px;
+      display: block;
+    }
+    
+    .menu-duration, .menu-price {
+      font-weight: bold;
+      display: block;
+    }
+    
+    .menu-description {
+      font-size: 28px;
+      margin-top: 10px;
+    }
+    
+    .card-body {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    
+    /* 小さい画面サイズでの調整 */
+    @media (max-width: 767px) {
+      .menu-name {
+        font-size: 28px;
+        margin-bottom: 8px;
+      }
+      
+      .menu-info {
+        font-size: 24px;
+      }
+      
+      .menu-description {
+        font-size: 24px;
+      }
+      
+      .card-body {
+        padding: 15px;
+      }
+    }
+    
+    /* 超小型画面用の調整 */
+    @media (max-width: 480px) {
+      .menu-name {
+        font-size: 26px;
+        margin-bottom: 5px;
+      }
+      
+      .menu-info {
+        font-size: 22px;
+      }
+      
+      .menu-description {
+        font-size: 22px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container form-container">
+    <div class="header-image-container">
+      <img src="https://app.veryda.jp/veryda_imegs/%E4%BA%88%E7%B4%84%E3%83%95%E3%82%A9%E3%83%BC%E3%83%A0.png" alt="予約フォーム" class="header-image">
+    </div>
+    <ul class="nav nav-tabs mb-0" id="reservationTabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link <?= activeTab === 'new' ? 'active' : '' ?>" id="new-tab" data-bs-toggle="tab" data-bs-target="#new" type="button" role="tab" aria-controls="new" aria-selected="<?= activeTab === 'new' ? 'true' : 'false' ?>">
+          <i class="bi bi-calendar-plus me-2"></i>新規予約
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link <?= activeTab === 'list' ? 'active' : '' ?>" id="list-tab" data-bs-toggle="tab" data-bs-target="#list" type="button" role="tab" aria-controls="list" aria-selected="<?= activeTab === 'list' ? 'true' : 'false' ?>">
+          <i class="bi bi-calendar-check me-2"></i>予約確認
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="history-tab" data-bs-toggle="tab" data-bs-target="#history" type="button" role="tab" aria-controls="history" aria-selected="false">
+          <i class="bi bi-clock-history me-2"></i>予約履歴
+        </button>
+      </li>
+    </ul>
+    <div class="tab-content" id="reservationTabContent">
+      <div class="tab-pane fade <?= activeTab === 'new' ? 'show active' : '' ?>" id="new" role="tabpanel" aria-labelledby="new-tab">
+        <h4 style="margin-left: 15px;">Soin ネイルサロン 新規予約</h4>
+        <form id="reservationForm">
+          <input type="hidden" id="userId" name="userId" value="<?= userId ?>">
+          <div class="row mb-3">
+            <div class="col-12" style="font-size: 40px;">
+              <div class="d-flex align-items-center" style="margin-left: 15px;">
+                <span class="form-control-plaintext mb-0 p-0"><b><?= userName ?> 様</b></span>
+              </div>
+            </div>
+          </div>
+          <hr class="my-4">
+          <div style="margin-left: 15px;">
+            <h4>STEP1：メニュー選択<span class="text-danger">*</span></h4>
+            <p class="mb-3">ご希望のメニューをお選びください。</p>
+          </div>
+          <div class="card-body">
+            <div class="row" id="menuSelectContainer">
+              <div class="col-12">
+                <div class="menu-selector" id="menuSelector">
+                  <div class="text-center p-3">
+                    <div class="spinner-border text-primary" role="status">
+                      <span class="visually-hidden">メニュー読み込み中...</span>
+                    </div>
+                  </div>
+                </div>
+                <input type="hidden" id="selectedMenuId" name="menuId">
+              </div>
+            </div>
+          </div>
+          <hr class="my-4">
+          <div style="margin-left: 15px;">
+            <h4 id="dateTimeSection">STEP2：予約日時の選択 <span class="text-danger">*</span></h4>
+            <p class="mb-3">ご希望の日時をお選びください。</p>
+            <p class="mb-3">本日から30日先まで予約可能です。</p>
+            <p class="mb-3">店休日は毎週日曜・第2第4月曜日となっています。</p>
+            <p class="mb-3">当日のご予約を希望の場合は店舗までお問い合わせください。</p>
+          </div>
+          <hr class="my-4" style="margin-top: 40px !important;">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <button type="button" class="week-nav-button" id="prevWeek" disabled>
+              <i class="bi bi-chevron-left"></i> 前の一週間
+            </button>
+            <div class="d-flex align-items-center">
+              <button type="button" class="btn btn-primary mx-2" id="todayBtn">
+                <i class="bi bi-calendar-event"></i> 本日
+              </button>
+              <div id="currentWeek" class="text-center fw-bold"></div>
+            </div>
+            <button type="button" class="week-nav-button" id="nextWeek" disabled>
+              次の一週間 <i class="bi bi-chevron-right"></i>
+            </button>
+          </div>
+          <div class="calendar-container">
+            <table class="table table-bordered">
+              <thead id="calendarHeader">
+                <tr id="daysRow">
+                  <th class="time-header">時間</th>
+                </tr>
+              </thead>
+              <tbody id="calendarBody">
+                <tr>
+                  <td colspan="8" class="text-center p-4">
+                    <div class="spinner-border text-primary" role="status">
+                      <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p>予約可能な時間枠を読み込み中...</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">選択されている日時:</label>
+            <div id="selectedDateTime" class="alert alert-secondary">日時を選択してください</div>
+            <input type="hidden" id="selectedDate" name="date">
+            <input type="hidden" id="selectedTime" name="time">
+          </div>
+          <div class="mb-4">
+            <label for="customerNotes" class="form-label">スタッフにお伝えしたいこと</label>
+            <textarea class="form-control" id="customerNotes" name="customerNotes" rows="3" placeholder="ハンドorフット、オフの有無をご記入ください。"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary w-100" id="submitBtn" disabled>
+            <i class="bi bi-calendar-check me-2"></i>予約を確定する
+          </button>
+        </form>
+        <div id="result" class="mt-3"></div>
+      </div>
+      <div class="tab-pane fade <?= activeTab === 'list' ? 'show active' : '' ?>" id="list" role="tabpanel" aria-labelledby="list-tab">
+        <h4>予約確認・キャンセル</h4>
+        <div id="reservationsList" class="reservations-list">
+          <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p>予約情報を読み込み中...</p>
+          </div>
+        </div>
+        <div id="cancelResult" class="mt-3"></div>
+      </div>
+      <div class="tab-pane fade" id="history" role="tabpanel" aria-labelledby="history-tab">
+        <h4>予約履歴</h4>
+        <div id="historyList" class="history-list">
+          <div class="text-center p-4">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p>予約履歴を読み込み中...</p>
+          </div>
+        </div>
+        <div id="historyResult" class="mt-3"></div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- モーダル部分は元のまま -->
+  <div class="modal fade" id="confirmationModal" tabindex="-1" aria-labelledby="confirmationModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title" id="confirmationModalLabel">
+            <i class="bi bi-calendar-check me-2"></i>予約内容の確認
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <div><strong>日付：</strong><span id="confirmDate"></span></div>
+          </div>
+          <div class="mb-3">
+            <div><strong>時間：</strong><span id="confirmTime"></span></div>
+          </div>
+          <div class="mb-3">
+            <div><strong>内容：</strong><span id="confirmContent">選択されたメニュー</span></div>
+          </div>
+          <div class="mb-3" id="confirmNotesContainer">
+            <div><strong>スタッフへのメモ：</strong><span id="confirmNotes" class="text-muted">なし</span></div>
+          </div>
+          <div class="alert alert-info mt-3">
+            <i class="bi bi-info-circle me-2"></i>
+            この内容で予約を確定します。よろしいですか？
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+            <i class="bi bi-arrow-left me-2"></i>戻る
+          </button>
+          <button type="button" class="btn btn-success" id="modalConfirmBtn">
+            <i class="bi bi-check-circle me-2"></i>予約を確定する
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="modal fade" id="cancelConfirmModal" tabindex="-1" aria-labelledby="cancelConfirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-danger text-white">
+          <h5 class="modal-title" id="cancelConfirmModalLabel">
+            <i class="bi bi-calendar-x me-2"></i>予約キャンセルの確認
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p>以下の予約をキャンセルします。この操作は取り消せません。</p>
+          <div class="alert alert-light">
+            <div class="mb-3">
+              <div><strong>予約ID：</strong><span id="modalReservationId"></span></div>
+            </div>
+            <div class="mb-3">
+              <div><strong>日付：</strong><span id="modalReservationDate"></span></div>
+            </div>
+            <div class="mb-3">
+              <div><strong>時間：</strong><span id="modalReservationTime"></span></div>
+            </div>
+            <div class="mb-3">
+              <div><strong>内容：</strong><span id="modalReservationContent">カット・スタイリング</span></div>
+            </div>
+            <div class="mb-3">
+              <div><strong>金額：</strong><span id="modalReservationPrice">-</span></div>
+            </div>
+            <div class="mb-3" id="modalNotesContainer">
+              <div><strong>スタッフへのメモ：</strong><span id="modalReservationNotes" class="text-muted">なし</span></div>
+            </div>
+          </div>
+          <div class="alert alert-danger mt-3">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            本当にキャンセルしますか？
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+            <i class="bi bi-arrow-left me-2"></i>戻る
+          </button>
+          <button type="button" class="btn btn-danger" id="confirmCancelBtn">
+            <i class="bi bi-x-circle me-2"></i>
+            <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+            キャンセルする
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="modal fade" id="reservationCompleteModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="reservationCompleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header bg-success text-white">
+          <h5 class="modal-title" id="reservationCompleteModalLabel">
+            <i class="bi bi-check-circle-fill me-2"></i>予約完了
+          </h5>
+        </div>
+        <div class="modal-body text-center">
+          <div class="py-3">
+            <i class="bi bi-check-circle-fill text-success" style="font-size: 64px;"></i>
+          </div>
+          <h4 class="mb-3">予約が完了しました</h4>
+          <p class="mb-3">ご予約ありがとうございます。</p>
+          <div id="completeReservationDetails" class="alert alert-light text-start mb-4">
+            <p><strong>日時：</strong><span id="completeDate"></span></p>
+            <p><strong>内容：</strong>パーソナルトレーニング</p>
+            <p id="completeNotes"><strong>スタッフへのメモ：</strong><span class="text-muted">なし</span></p>
+          </div>
+          <p class="text-muted mt-4">LINEアプリに戻るには画面を閉じてください</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div id="interactionBlocker" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9998; background:transparent;"></div>
+  
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+// --- クライアントサイドJavaScript ---
+const userId = document.getElementById('userId')?.value || 'default-user';
+let currentWeekStart = null;
+
+// サーバーサイド変数をパースする際のエラー処理を追加
+let startDate, endDate, businessHours, closedDays, allMenus, sessionDuration, minDaysAhead, daysAhead;
+
+try {
+  startDate = new Date('<?= startDate ?>');
+  if (isNaN(startDate.getTime())) {
+    console.warn('startDateの解析に失敗しました。現在日付を使用します。');
+    startDate = new Date();
+  }
+} catch (e) {
+  console.warn('startDateの解析に失敗しました。現在日付を使用します。');
+  startDate = new Date();
+}
+
+try {
+  endDate = new Date('<?= endDate ?>');
+  if (isNaN(endDate.getTime())) {
+    console.warn('endDateの解析に失敗しました。3ヶ月後を使用します。');
+    endDate = new Date();
+    endDate.setMonth(endDate.getMonth() + 3);
+  }
+} catch (e) {
+  console.warn('endDateの解析に失敗しました。3ヶ月後を使用します。');
+  endDate = new Date();
+  endDate.setMonth(endDate.getMonth() + 3);
+}
+
+try {
+  businessHours = JSON.parse('<?= businessHoursJson ?>');
+} catch (e) {
+  console.warn('営業時間データの解析に失敗しました。デフォルト値を使用します。');
+  businessHours = {
+    START: 9,
+    END: 18,
+    TIME_INTERVAL: 30
+  };
+}
+
+try {
+  closedDays = JSON.parse('<?= closedDaysJson ?>');
+} catch (e) {
+  console.warn('休業日データの解析に失敗しました。空の配列を使用します。');
+  closedDays = [];
+}
+
+try {
+  allMenus = JSON.parse('<?= menusJson ?>');
+} catch (e) {
+  console.warn('メニューデータの解析に失敗しました。デフォルトメニューを使用します。');
+  allMenus = [
+    {
+      id: "menu1",
+      name: "カット",
+      description: "シャンプー・カット・ブロー込み",
+      duration: 60,
+      price: 6000,
+      category: "ベーシックメニュー"
+    },
+    {
+      id: "menu2",
+      name: "カラー",
+      description: "シャンプー・ブロー込み（カット別）",
+      duration: 90,
+      price: 8000,
+      category: "ベーシックメニュー"
+    },
+    {
+      id: "menu3",
+      name: "パーマ",
+      description: "シャンプー・ブロー込み（カット別）",
+      duration: 120,
+      price: 10000,
+      category: "ベーシックメニュー"
+    }
+  ];
+}
+
+let selectedMenuDuration = 60; // 初期値（選択されたメニューの所要時間）
+
+try {
+  sessionDuration = <?= sessionDuration ?>;
+  if (isNaN(sessionDuration)) {
+    console.warn('sessionDurationの解析に失敗しました。デフォルト値（60分）を使用します。');
+    sessionDuration = 60;
+  }
+} catch (e) {
+  console.warn('sessionDurationの解析に失敗しました。デフォルト値（60分）を使用します。');
+  sessionDuration = 60;
+}
+
+try {
+  minDaysAhead = <?= minDaysAhead ?>;
+  if (isNaN(minDaysAhead)) {
+    console.warn('minDaysAheadの解析に失敗しました。デフォルト値（0）を使用します。');
+    minDaysAhead = 0;
+  }
+} catch (e) {
+  console.warn('minDaysAheadの解析に失敗しました。デフォルト値（0）を使用します。');
+  minDaysAhead = 0;
+}
+
+try {
+  daysAhead = <?= daysAhead ?>;
+  if (isNaN(daysAhead)) {
+    console.warn('daysAheadの解析に失敗しました。デフォルト値（30日）を使用します。');
+    daysAhead = 30;
+  }
+} catch (e) {
+  console.warn('daysAheadの解析に失敗しました。デフォルト値（30日）を使用します。');
+  daysAhead = 30;
+}
+
+// Google Apps Script機能の存在チェック
+const hasGoogleScriptRunFunction = typeof google !== 'undefined' && 
+                                  google.script && 
+                                  typeof google.script.run === 'object';
+
+/**
+ * DOM読み込み完了時の初期化処理
+ */
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('ページ初期化開始');
+  try {
+    const today = new Date();
+    currentWeekStart = new Date(today);
+    console.log('週の開始日セット:', formatDate(currentWeekStart));
+
+    // メニュー選択UIを初期化する前に、メニューデータをコンソールに出力して確認
+    console.log('メニューデータ確認:', allMenus);
+    
+    // メニューボタンのスタイルを定義（通常の文字列連結を使用）
+    const menuButtonStyles = 
+      '.menu-button {' +
+      '  cursor: pointer;' +
+      '  transition: all 0.3s ease;' +
+      '  border: 2px solid #dee2e6;' +
+      '  height: 100%;' +
+      '  border-radius: 24px;' +
+      '}' +
+      '.menu-button:hover {' +
+      '  transform: translateY(-2px);' +
+      '  box-shadow: 0 4px 8px rgba(0,0,0,0.1);' +
+      '  border-color: #adb5bd;' +
+      '}' +
+      '.menu-button.selected {' +
+      '  border-color: #0d6efd;' +
+      '  box-shadow: 0 4px 10px rgba(13,110,253,0.25);' +
+      '  background-color: #f0f7ff;' +
+      '}' +
+      '.menu-name {' +
+      '  font-size: 32px;' +
+      '  font-weight: bold;' +
+      '  margin-bottom: 8px;' +
+      '}' +
+      '.menu-info {' +
+      '  font-size: 28px;' +
+      '}' +
+      '.menu-duration, .menu-price {' +
+      '  font-weight: bold;' +
+      '}' +
+      '.menu-description {' +
+      '  font-size: 28px;' +
+      '  margin-top: 8px;' +
+      '}';
+    
+    // メニュースタイルをヘッドに追加
+    const styleElement = document.createElement('style');
+    styleElement.textContent = menuButtonStyles;
+    document.head.appendChild(styleElement);
+    console.log('メニューボタンのスタイルを追加しました');
+
+    // メニュー選択UIを初期化
+    initializeMenuSelector();
+
+    setupEventListeners(); // イベントリスナーを設定
+    updateWeekNavigation(); // 週ナビゲーションの状態を更新
+    
+    // サーバー関数の存在チェック
+    if (hasGoogleScriptRunFunction) {
+      updateCalendar(); // カレンダーを更新
+
+      // 初期表示タブが「予約確認・キャンセル」の場合に予約一覧を読み込む
+      let activeTab = '';
+      try {
+        activeTab = '<?= activeTab ?>';
+      } catch (e) {
+        activeTab = '';
+      }
+      
+      if (activeTab === 'list') {
+        loadReservations();
+      }
+    } else {
+      // Google Apps Scriptが利用できない場合はエラーメッセージを表示
+      console.error('Google Apps Scriptが利用できません。');
+      
+      // カレンダー部分にエラーメッセージを表示
+      const calendarBody = document.getElementById('calendarBody');
+      if (calendarBody) {
+        calendarBody.innerHTML = `
+          <tr>
+            <td colspan="8" class="text-center text-danger p-4">
+              <i class="bi bi-exclamation-triangle me-2"></i>
+              予約システムに接続できません。ページを再読み込みしてください。
+            </td>
+          </tr>
+        `;
+      }
+      
+      // 結果エリアにもエラーメッセージを表示
+      const resultDiv = document.getElementById('result');
+      if (resultDiv) {
+        displayMessage('result', `
+          <i class="bi bi-exclamation-circle me-2"></i>
+          システムに接続できないため、予約機能をご利用いただけません。
+          <br><small>ページを再読み込みしてからお試しください。</small>
+        `, 'danger');
+      }
+      
+      // 週ナビゲーションは表示する（日付表示のため）
+      updateWeekNavigation();
+    }
+  } catch (error) {
+    console.error('初期化中にエラーが発生しました:', error);
+    alert('ページの初期化中にエラーが発生しました: ' + error.message);
+  }
+});
+
+/**
+ * イベントリスナーを設定する
+ */
+function setupEventListeners() {
+  // タブ切り替え時に対応するデータを読み込む
+  const listTab = document.getElementById('list-tab');
+  if (listTab) {
+    listTab.addEventListener('shown.bs.tab', loadReservations);
+  }
+  
+  const historyTab = document.getElementById('history-tab');
+  if (historyTab) {
+    historyTab.addEventListener('shown.bs.tab', loadHistory);
+  }
+
+  // 週移動ボタンのクリックイベント
+  const prevWeekBtn = document.getElementById('prevWeek');
+  if (prevWeekBtn) {
+    prevWeekBtn.addEventListener('click', () => navigateWeek(-7));
+  }
+  
+  const nextWeekBtn = document.getElementById('nextWeek');
+  if (nextWeekBtn) {
+    nextWeekBtn.addEventListener('click', () => navigateWeek(7));
+  }
+
+  // 本日ボタンのクリックイベント
+  const todayBtn = document.getElementById('todayBtn');
+  if (todayBtn) {
+    todayBtn.addEventListener('click', goToToday);
+  }
+
+  // 予約フォームの送信イベント
+  const reservationForm = document.getElementById('reservationForm');
+  if (reservationForm) {
+    reservationForm.addEventListener('submit', handleFormSubmit);
+  }
+}
+
+/**
+ * メニュー選択UIを初期化する
+ */
+function initializeMenuSelector() {
+  console.log('メニュー選択UI初期化開始');
+  const menuSelector = document.getElementById('menuSelector');
+  if (!menuSelector) {
+    console.error('menuSelector要素が見つかりません');
+    return;
+  }
+  
+  // ローディング表示を消去
+  menuSelector.innerHTML = '';
+  
+  // メニューデータチェック
+  if (!allMenus || !Array.isArray(allMenus) || allMenus.length === 0) {
+    console.error('メニューデータが無効です:', allMenus);
+    menuSelector.innerHTML = '<div class="alert alert-warning">メニュー情報が見つかりませんでした。</div>';
+    return;
+  }
+
+  console.log('利用可能なメニュー:', allMenus.length, '件');
+
+  // カテゴリー別にメニューをグループ化
+  const menuCategories = {};
+  allMenus.forEach(menu => {
+    const category = menu.category || '未分類';
+    if (!menuCategories[category]) {
+      menuCategories[category] = [];
+    }
+    menuCategories[category].push(menu);
+  });
+
+  // カテゴリー別にメニューボタンを作成
+  Object.keys(menuCategories).forEach(category => {
+    const categoryDiv = document.createElement('div');
+    categoryDiv.className = 'menu-category mb-4';
+    
+    const menuButtonsDiv = document.createElement('div');
+    menuButtonsDiv.className = 'row g-3';
+    
+    menuCategories[category].forEach(menu => {
+      const menuCol = document.createElement('div');
+      menuCol.className = 'col-12';
+      
+      const menuButton = document.createElement('div');
+      menuButton.className = 'card menu-button';
+      menuButton.id = `menu-${menu.id}`;
+      menuButton.dataset.menuId = menu.id;
+      menuButton.dataset.menuName = menu.name;
+      menuButton.dataset.menuDuration = menu.duration;
+      menuButton.dataset.menuPrice = menu.price;
+      menuButton.dataset.menuCategory = category; // カテゴリー情報を保存
+      
+      menuButton.innerHTML = `
+        <div class="row g-0">
+          <div class="col-12">
+            <div class="card-body">
+              <div class="category-tags-container">
+                ${category.split(',').map(cat => 
+                  `<span class="menu-category-tag">${cat.trim()}</span>`
+                ).join(' ')}
+              </div>
+              <h5 class="menu-name">メニュー名：${menu.name}</h5>
+              <div class="menu-info">
+                <div class="menu-duration mb-2">所要時間：${menu.duration}分（目安）</div>
+                <div class="menu-price mb-2">金額：¥${menu.price.toLocaleString()}</div>
+              </div>
+              <p class="menu-description text-muted">${menu.description || ''}</p>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      menuButton.addEventListener('click', function() {
+        console.log(`メニュー選択: ${menu.id} - ${menu.name}`);
+        selectMenu(menu.id);
+      });
+      
+      menuCol.appendChild(menuButton);
+      menuButtonsDiv.appendChild(menuCol);
+    });
+    
+    categoryDiv.appendChild(menuButtonsDiv);
+    menuSelector.appendChild(categoryDiv);
+  });
+  
+  // デバッグメッセージ（開発時のみ）
+  const debugDiv = document.createElement('div');
+  debugDiv.className = 'alert alert-info mt-3 small';
+  debugDiv.innerHTML = `<small>メニュー表示確認: ${allMenus.length}件のメニューを取得しました</small>`;
+  menuSelector.appendChild(debugDiv);
+    
+  console.log('メニュー選択UI初期化完了');
+}
+
+/**
+ * メニューを選択する
+ * @param {string} menuId - 選択するメニューID
+ */
+function selectMenu(menuId) {
+  console.log(`メニュー選択処理: ${menuId}`);
+  console.log('現在のメニューリスト:', allMenus.map(m => ({ id: m.id, name: m.name })));
+  
+  // 以前に選択されたメニューの選択状態を解除
+  const previousSelected = document.querySelector('.menu-button.selected');
+  if (previousSelected) {
+    previousSelected.classList.remove('selected');
+    console.log('前回の選択を解除しました');
+  }
+  
+  // 選択されたメニューにselectedクラスを追加
+  const selectedMenuButton = document.getElementById(`menu-${menuId}`);
+  if (selectedMenuButton) {
+    selectedMenuButton.classList.add('selected');
+    console.log(`メニューボタンを選択状態に設定: ${menuId}`);
+    
+    // hiddenフィールドを更新
+    const selectedMenuIdField = document.getElementById('selectedMenuId');
+    if (selectedMenuIdField) {
+      selectedMenuIdField.value = menuId;
+      console.log(`選択メニューIDをフォームに設定: ${menuId}`);
+    } else {
+      console.error('selectedMenuIdフィールドが見つかりません');
+    }
+    
+    // 選択されたメニューの所要時間を保存
+    const menuDuration = parseInt(selectedMenuButton.dataset.menuDuration, 10);
+    selectedMenuDuration = menuDuration || 60;
+    console.log(`選択されたメニューの所要時間: ${selectedMenuDuration}分`);
+    
+    // フォーム検証
+    validateForm();
+    
+    // 日時選択セクションへスクロール
+    const dateTimeSection = document.getElementById('dateTimeSection');
+    if (dateTimeSection) {
+      // スムーズスクロールで日時選択セクションを表示
+      setTimeout(() => {
+        dateTimeSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        console.log('予約日時選択セクションへスクロール');
+      }, 300); // 少し遅延させてスクロールをスムーズにする
+    } else {
+      console.warn('予約日時選択セクションが見つかりません');
+    }
+    
+    // カレンダーを更新 (メニューによって異なる所要時間のため)
+    if (hasGoogleScriptRunFunction) {
+      console.log('カレンダーを更新します（所要時間の変更）');
+      updateCalendar();
+    } else {
+      // システム接続エラー - カレンダー更新ができない
+      console.error('カレンダー更新ができません: Google Apps Script未接続');
+      
+      // カレンダー部分にエラーメッセージを表示
+      const calendarBody = document.getElementById('calendarBody');
+      if (calendarBody) {
+        calendarBody.innerHTML = `
+          <tr>
+            <td colspan="8" class="text-center text-warning p-4">
+              <i class="bi bi-exclamation-triangle me-2"></i>
+              メニュー変更に伴う予約可能時間の更新ができません。
+              <br><small>ページを再読み込みしてください。</small>
+            </td>
+          </tr>
+        `;
+      }
+      
+      // 結果エリアにも警告メッセージを表示
+      const resultDiv = document.getElementById('result');
+      if (resultDiv) {
+        displayMessage('result', `
+          <i class="bi bi-exclamation-triangle me-2"></i>
+          システム接続エラーのため、選択したメニューの所要時間に応じた予約可能時間を表示できません。
+          <br><small>ページを再読み込みしてからお試しください。</small>
+        `, 'warning');
+      }
+    }
+  } else {
+    console.error(`メニューボタンが見つかりません: menu-${menuId}`);
+    
+    // メニューボタンが見つからない場合のエラーハンドリング
+    displayMessage('result', `
+      <i class="bi bi-exclamation-circle me-2"></i>
+      選択されたメニューが見つかりません。ページを再読み込みしてください。
+    `, 'danger');
+  }
+}
+
+/**
+ * 本日の週に移動する
+ */
+function goToToday() {
+  const today = new Date();
+  currentWeekStart = new Date(today);
+  if (hasGoogleScriptRunFunction) {
+    updateCalendar();
+  } else {
+    console.error('Google Apps Scriptが利用できません');
+    displayMessage('result', 'システムに接続できません。ページを再読み込みしてください。', 'danger');
+  }
+}
+
+/**
+ * 表示する週を移動する
+ */
+function navigateWeek(days) {
+  const prevWeekBtn = document.getElementById('prevWeek');
+  const nextWeekBtn = document.getElementById('nextWeek');
+  const todayBtn = document.getElementById('todayBtn');
+
+  if (prevWeekBtn) prevWeekBtn.disabled = true;
+  if (nextWeekBtn) nextWeekBtn.disabled = true;
+  if (todayBtn) todayBtn.disabled = true;
+
+  const clickedBtn = days < 0 ? prevWeekBtn : nextWeekBtn;
+  if (!clickedBtn) return;
+  
+  const originalText = clickedBtn.innerHTML;
+  clickedBtn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> `;
+
+  const newWeekStart = new Date(currentWeekStart);
+  newWeekStart.setDate(newWeekStart.getDate() + days);
+
+  // 移動制限チェック
+  const todayLimit = new Date();
+  todayLimit.setHours(0, 0, 0, 0);
+  if (days < 0 && newWeekStart < todayLimit) {
+    clickedBtn.innerHTML = originalText;
+    updateWeekNavigation();
+    return;
+  }
+
+  const newWeekEnd = new Date(newWeekStart);
+  newWeekEnd.setDate(newWeekStart.getDate() + 6);
+  if (days > 0 && newWeekEnd > endDate) {
+    clickedBtn.innerHTML = originalText;
+    updateWeekNavigation();
+    return;
+  }
+
+  currentWeekStart = newWeekStart;
+
+  setTimeout(() => {
+    if (hasGoogleScriptRunFunction) {
+      updateCalendar();
+    } else {
+      // システム接続エラー - カレンダー更新ができない
+      console.error('カレンダー更新ができません: Google Apps Script未接続');
+      
+      const calendarBody = document.getElementById('calendarBody');
+      if (calendarBody) {
+        calendarBody.innerHTML = `
+          <tr>
+            <td colspan="8" class="text-center text-danger p-4">
+              <i class="bi bi-exclamation-triangle me-2"></i>
+              システムに接続できません。ページを再読み込みしてください。
+            </td>
+          </tr>
+        `;
+      }
+      
+      // ローディング状態を終了
+      showLoading(false);
+      
+      // 週表示の更新は行う（日付表示のため）
+      updateWeekNavigation();
+    }
+    
+    // ボタン状態を元に戻す
+    clickedBtn.innerHTML = originalText;
+  }, 300);
+}
+
+/**
+ * カレンダー表示を更新する関数
+ */
+function updateCalendar() {
+  showLoading(true);
+  updateWeekNavigation();
+
+  try {
+    console.log("予約可能時間を取得中:", { weekStart: formatDate(currentWeekStart) });
+    
+    if (hasGoogleScriptRunFunction) {
+      google.script.run
+        .withSuccessHandler(handleAvailabilitySuccess)
+        .withFailureHandler(handleAvailabilityFailure)
+        .getWeeklyAvailability(formatDate(currentWeekStart));
+    } else {
+      // エラー表示
+      handleAvailabilityFailure('Google Apps Scriptに接続できません');
+    }
+  } catch (error) {
+    console.error('カレンダー更新処理でエラー:', error);
+    handleAvailabilityFailure('クライアント側でのエラー: ' + error.message);
+  }
+}
+
+/**
+ * 空き状況取得成功時のコールバック関数
+ */
+function handleAvailabilitySuccess(weekData) {
+   console.log('予約状況データ取得成功:', weekData);
+   if (!weekData || !Array.isArray(weekData)) {
+     console.error('サーバーから受信したデータ形式が無効です:', weekData);
+     handleAvailabilityFailure('無効なデータ形式');
+     return;
+   }
+   renderCalendar(weekData);
+   showLoading(false);
+}
+
+/**
+ * 空き状況取得失敗時のコールバック関数
+ */
+function handleAvailabilityFailure(error) {
+  console.error('予約状況データの取得に失敗しました:', error);
+  const calendarBody = document.getElementById('calendarBody');
+  if (calendarBody) {
+    calendarBody.innerHTML = `
+      <tr><td colspan="8" class="text-center text-danger">カレンダー情報の取得に失敗しました。時間をおいて再度お試しください。</td></tr>`;
+  }
+  showLoading(false);
+  displayMessage('result', '<i class="bi bi-exclamation-triangle me-2"></i>カレンダー情報の取得に失敗しました。ページを再読み込みするか、時間をおいて再度お試しください。', 'danger');
+}
+
+/**
+ * 受け取ったデータをもとにカレンダーを描画する
+ */
+function renderCalendar(weekData) {
+  updateCalendarHeader();
+  const calendarBody = document.getElementById('calendarBody');
+  if (!calendarBody) return;
+  
+  calendarBody.innerHTML = '';
+
+  const businessStartHour = businessHours.START;
+  const businessEndHour = businessHours.END;
+  const timeInterval = businessHours.TIME_INTERVAL;
+  let hasAvailableSlots = false;
+
+  for (let h = businessStartHour; h < businessEndHour; h++) {
+    for (let m = 0; m < 60; m += timeInterval) {
+      const timeString = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      const row = createTimeSlotRow(timeString, weekData);
+      calendarBody.appendChild(row);
+      if (row.querySelector('.time-slot.available')) {
+        hasAvailableSlots = true;
+      }
+    }
+  }
+
+  if (!hasAvailableSlots) {
+    const noSlotsRow = document.createElement('tr');
+    noSlotsRow.innerHTML = `
+      <td colspan="8" class="text-center text-warning py-3">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        現在予約可能な時間枠がありません。別の週をご選択ください。
+      </td>
+    `;
+    calendarBody.appendChild(noSlotsRow);
+  }
+}
+
+/**
+ * カレンダーのヘッダー（日付と曜日）を更新する
+ */
+function updateCalendarHeader() {
+  const daysRow = document.getElementById('daysRow');
+  if (!daysRow) return;
+  
+  daysRow.innerHTML = '<th class="time-header">時間</th>';
+
+  const daysJP = ['日', '月', '火', '水', '木', '金', '土'];
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(currentWeekStart);
+    date.setDate(date.getDate() + i);
+    const dayOfWeek = date.getDay();
+    const isSunday = dayOfWeek === 0;
+    const isSaturday = dayOfWeek === 6;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const currentDate = new Date(date);
+    currentDate.setHours(0, 0, 0, 0);
+    const isToday = currentDate.getTime() === today.getTime();
+
+    const th = document.createElement('th');
+    th.className = `day-header ${isSunday ? 'sunday' : ''} ${isSaturday ? 'saturday' : ''} ${isToday ? 'today' : ''}`;
+    const todayMark = isToday ? '<span class="badge bg-warning text-dark">今日</span><br>' : '';
+    th.innerHTML = `${todayMark}${formatDateMMDD(date)}<br>(${daysJP[dayOfWeek]})`;
+    daysRow.appendChild(th);
+  }
+}
+
+/**
+ * 特定の時間帯のカレンダー行（全曜日分）を作成する
+ */
+function createTimeSlotRow(timeString, weekData) {
+  const row = document.createElement('tr');
+  const timeCell = document.createElement('td');
+  timeCell.className = 'time-header';
+  timeCell.textContent = timeString;
+  row.appendChild(timeCell);
+
+  for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+    const cell = document.createElement('td');
+    const dayData = weekData[dayIndex];
+
+    if (!dayData) {
+       cell.innerHTML = '-';
+       cell.classList.add('unavailable');
+    } else if (dayData.isHoliday) {
+      cell.classList.add('holiday-cell');
+      cell.innerHTML = '<span class="holiday-text">-</span>';
+    } else {
+      const hourData = dayData.hours ? dayData.hours.find(h => h.time === timeString) : null;
+      const slotDiv = document.createElement('div');
+      slotDiv.classList.add('time-slot');
+
+      // 選択されたメニューの所要時間を考慮する
+      const duration = selectedMenuDuration || sessionDuration;
+      let isDurationAvailable = false;
+
+      if (hourData && hourData.available > 0) {
+        // 時間帯が予約可能かどうかをチェック
+        const dateStr = dayData.date; // YYYY-MM-DD
+        const timeStr = timeString; // HH:MM
+        const slotStart = new Date(`${dateStr}T${timeStr}`);
+        const slotEnd = new Date(slotStart.getTime() + duration * 60 * 1000);
+
+        // 営業時間終了時刻を取得
+        const businessEndHour = businessHours.END;
+        const businessEndTime = new Date(slotStart);
+        businessEndTime.setHours(businessEndHour, 0, 0, 0);
+
+        // 営業時間内に収まるかチェック
+        if (slotEnd <= businessEndTime) {
+          // 選択されたメニューの所要時間内で他の予約と重複していないかチェック
+          isDurationAvailable = true;
+          
+          // 時間内の各スロットをチェック
+          let currentTime = new Date(slotStart);
+          const timeInterval = businessHours.TIME_INTERVAL || 30; // 時間間隔（分）
+          
+          while (currentTime < slotEnd) {
+            const currentHour = currentTime.getHours();
+            const currentMinute = currentTime.getMinutes();
+            const currentTimeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+            
+            // 対応する時間枠のデータを探す
+            const currentHourData = dayData.hours.find(h => h.time === currentTimeStr);
+            if (!currentHourData || currentHourData.available <= 0) {
+              isDurationAvailable = false;
+              break;
+            }
+            
+            // 次の時間枠へ
+            currentTime.setMinutes(currentTime.getMinutes() + timeInterval);
+          }
+        } else {
+          isDurationAvailable = false;
+        }
+      }
+
+      if (hourData && hourData.available > 0 && isDurationAvailable) {
+        slotDiv.classList.add('available');
+        slotDiv.textContent = '◯';
+        slotDiv.dataset.date = dayData.date;
+        slotDiv.dataset.time = timeString;
+        slotDiv.addEventListener('click', () => selectTimeSlot(slotDiv));
+        slotDiv.title = `${timeString}から予約可能です`;
+      } else {
+        slotDiv.classList.add('unavailable');
+        slotDiv.textContent = '×';
+        let reason = "この時間枠は予約できません";
+        if (hourData) {
+          if (hourData.available <= 0) {
+            reason = "この時間枠は既に予約が入っています";
+          } else if (!isDurationAvailable) {
+            reason = `この時間枠から${duration}分の予約ができません`;
+          }
+        }
+        slotDiv.title = reason;
+      }
+      cell.appendChild(slotDiv);
+    }
+    row.appendChild(cell);
+  }
+  return row;
+}
+
+/**
+ * タイムスロットがクリックされたときの処理
+ */
+function selectTimeSlot(element) {
+  const previouslySelected = document.querySelector('.time-slot.selected');
+  if (previouslySelected) {
+    previouslySelected.classList.remove('selected');
+  }
+  element.classList.add('selected');
+
+  const date = element.dataset.date;
+  const time = element.dataset.time;
+  
+  const selectedDateField = document.getElementById('selectedDate');
+  const selectedTimeField = document.getElementById('selectedTime');
+  if (selectedDateField) selectedDateField.value = date;
+  if (selectedTimeField) selectedTimeField.value = time;
+
+  // 選択されたメニューの所要時間を使用（未選択の場合はデフォルト値を使用）
+  const duration = selectedMenuDuration || sessionDuration;
+  
+  const startDateTime = new Date(date + 'T' + time);
+  const endDateTime = new Date(startDateTime.getTime() + duration * 60000);
+  const endTimeStr = `${String(endDateTime.getHours()).padStart(2, '0')}:${String(endDateTime.getMinutes()).padStart(2, '0')}`;
+  const displayDate = formatDateWithDayJP(startDateTime);
+
+  const selectedDateTimeEl = document.getElementById('selectedDateTime');
+  if (selectedDateTimeEl) {
+    selectedDateTimeEl.textContent = `${displayDate} ${time}～${endTimeStr}`;
+    selectedDateTimeEl.classList.remove('alert-secondary');
+    selectedDateTimeEl.classList.add('alert-info');
+  }
+
+  validateForm();
+  const submitBtn = document.getElementById('submitBtn');
+  if (submitBtn) {
+    submitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+/**
+ * フォームの入力状態をチェックし、送信ボタンの有効/無効を切り替える
+ */
+function validateForm() {
+  const submitBtn = document.getElementById('submitBtn');
+  if (!submitBtn) return;
+  
+  const dateSelected = document.getElementById('selectedDate')?.value !== '';
+  const timeSelected = document.getElementById('selectedTime')?.value !== '';
+  const menuSelected = document.getElementById('selectedMenuId')?.value !== '';
+  submitBtn.disabled = !(dateSelected && timeSelected && menuSelected);
+}
+
+/**
+ * 予約フォーム送信時の処理（モーダル表示）
+ */
+function handleFormSubmit(e) {
+  e.preventDefault();
+  const resultDiv = document.getElementById('result');
+  if (resultDiv) {
+    resultDiv.innerHTML = '';
+  }
+
+  // 日時とメニューが選択されているかチェック
+  const dateValue = document.getElementById('selectedDate')?.value;
+  const timeValue = document.getElementById('selectedTime')?.value;
+  const menuId = document.getElementById('selectedMenuId')?.value;
+
+  console.log('フォーム送信時のメニューID:', menuId);
+  console.log('allMenus配列:', allMenus);
+  
+  if (!dateValue || !timeValue) {
+    displayMessage('result', '<i class="bi bi-exclamation-triangle me-2"></i>予約日時を選択してください。', 'warning');
+    return;
+  }
+  
+  if (!menuId) {
+    displayMessage('result', '<i class="bi bi-exclamation-triangle me-2"></i>メニューを選択してください。', 'warning');
+    return;
+  }
+
+  // 選択されたメニュー情報を取得
+  const selectedMenu = allMenus.find(menu => menu.id === menuId);
+  console.log('メニュー検索結果:', selectedMenu ? '見つかりました' : '見つかりません');
+  if (!selectedMenu) {
+    console.error('メニューIDの不一致 - 検索ID:', menuId);
+    console.error('利用可能なメニューID一覧:', allMenus.map(m => m.id).join(', '));
+  }
+
+  if (!selectedMenu) {
+    displayMessage('result', '<i class="bi bi-exclamation-triangle me-2"></i>選択されたメニューが無効です。', 'danger');
+    return;
+  }
+
+  const customerNotesValue = document.getElementById('customerNotes')?.value?.trim() || '';
+
+  // 時間計算
+  const startDateTime = new Date(dateValue + 'T' + timeValue);
+  const endDateTime = new Date(startDateTime.getTime() + selectedMenu.duration * 60000);
+  const endTimeStr = `${String(endDateTime.getHours()).padStart(2, '0')}:${String(endDateTime.getMinutes()).padStart(2, '0')}`;
+  const displayDate = formatDateWithDayJP(startDateTime);
+
+  // モーダルに内容を設定
+  const confirmDateEl = document.getElementById('confirmDate');
+  const confirmTimeEl = document.getElementById('confirmTime');
+  const confirmContentEl = document.getElementById('confirmContent');
+  const confirmNotesEl = document.getElementById('confirmNotes');
+  const confirmNotesContainerEl = document.getElementById('confirmNotesContainer');
+  
+  if (confirmDateEl) confirmDateEl.textContent = displayDate;
+  if (confirmTimeEl) confirmTimeEl.textContent = `${timeValue} ～ ${endTimeStr}`;
+  if (confirmContentEl) confirmContentEl.textContent = `${selectedMenu.name} (${selectedMenu.duration}分・¥${selectedMenu.price.toLocaleString()})`;
+
+  if (confirmNotesEl) confirmNotesEl.textContent = customerNotesValue || 'なし';
+  if (confirmNotesContainerEl) confirmNotesContainerEl.style.display = 'block';
+  if (confirmNotesEl) confirmNotesEl.classList.toggle('text-muted', !customerNotesValue);
+
+  const confirmationModal = new bootstrap.Modal(document.getElementById('confirmationModal'));
+  if (!confirmationModal) {
+    console.error('予約確認モーダルが見つかりません');
+    return;
+  }
+  
+  confirmationModal.show();
+
+  const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+  if (!modalConfirmBtn) {
+    console.error('予約確定ボタンが見つかりません');
+    return;
+  }
+  
+  const newModalConfirmBtn = modalConfirmBtn.cloneNode(true);
+  modalConfirmBtn.parentNode.replaceChild(newModalConfirmBtn, modalConfirmBtn);
+
+  newModalConfirmBtn.addEventListener('click', function() {
+    confirmationModal.hide();
+    
+    if (hasGoogleScriptRunFunction) {
+      submitReservation({
+        userId: userId,
+        date: dateValue,
+        time: timeValue,
+        menuId: menuId,
+        notes: customerNotesValue
+      });
+    } else {
+      // システム接続エラー - 予約処理を実行できない
+      console.error('予約送信失敗: Google Apps Script接続不可');
+      
+      // エラーメッセージを表示
+      displayMessage('result', `
+        <div class="alert alert-danger">
+          <i class="bi bi-exclamation-circle me-2"></i>
+          システムに接続できないため、予約を処理できません。
+          <br><small>ページを再読み込みしてから再度お試しください。</small>
+        </div>
+      `, '');
+      
+      // モーダルが閉じているので、エラーメッセージが見えるようにスクロール
+      const resultDiv = document.getElementById('result');
+      if (resultDiv) {
+        resultDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  });
+}
+
+/**
+ * 予約データを送信し、サーバー処理を実行する
+ */
+function submitReservation(formData) {
+  const submitBtn = document.getElementById('submitBtn');
+  const resultDiv = document.getElementById('result');
+  if (resultDiv) resultDiv.innerHTML = '';
+  
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `
+      <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+      処理中...
+    `;
+  }
+
+  if (hasGoogleScriptRunFunction) {
+    google.script.run
+      .withSuccessHandler(result => {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<i class="bi bi-calendar-check me-2"></i>予約を確定する';
+        }
+        handleReservationSuccess(result);
+      })
+      .withFailureHandler(error => {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<i class="bi bi-calendar-check me-2"></i>予約を確定する';
+        }
+        handleReservationFailure(error);
+      })
+      .createReservation(formData);
+  } else {
+    // システム接続エラー - 予約処理を実行できない
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="bi bi-calendar-check me-2"></i>予約を確定する';
+    }
+    
+    // エラーメッセージを表示
+    displayMessage('result', `
+      <div class="alert alert-danger">
+        <i class="bi bi-exclamation-circle me-2"></i>
+        システムに接続できないため、予約を処理できません。
+        <br><small>ページを再読み込みしてから再度お試しください。</small>
+      </div>
+    `, '');
+    
+    // ログにエラーを記録
+    console.error('予約送信失敗: Google Apps Script接続不可');
+  }
+}
+
+/**
+ * 予約成功時の処理
+ */
+function handleReservationSuccess(result) {
+  console.log('予約結果:', result);
+  if (result.success) {
+    resetReservationForm();
+    if (result.reservationInfo) {
+      const dateObj = new Date(result.reservationInfo.date + 'T' + result.reservationInfo.time);
+      const formattedDate = formatDateWithDayJP(dateObj);
+      const timeDisplay = result.reservationInfo.endTime ?
+        `${result.reservationInfo.time} 〜 ${result.reservationInfo.endTime}` :
+        result.reservationInfo.time;
+      
+      const completeDateEl = document.getElementById('completeDate');
+      if (completeDateEl) completeDateEl.textContent = `${formattedDate} ${timeDisplay}`;
+      
+      // メニュー名と価格を表示
+      const completeMenu = document.getElementById('completeMenu');
+      if (completeMenu && result.reservationInfo.menuName) {
+        // メニュー名、所要時間、価格を表示
+        const priceText = result.reservationInfo.price ? 
+          `・¥${result.reservationInfo.price.toLocaleString()}` : '';
+        completeMenu.textContent = `${result.reservationInfo.menuName} (${result.reservationInfo.duration}分${priceText})`;
+      } else {
+        // completeMenuが見つからない場合は、completeReservationDetailsの中から内容：の行を探して修正
+        const detailsDiv = document.getElementById('completeReservationDetails');
+        if (detailsDiv) {
+          const menuParagraph = Array.from(detailsDiv.querySelectorAll('p')).find(p => 
+            p.textContent.includes('内容：')
+          );
+          
+          if (menuParagraph && result.reservationInfo.menuName) {
+            const priceText = result.reservationInfo.price ? 
+              `・${result.reservationInfo.price.toLocaleString()}円` : '';
+            menuParagraph.innerHTML = `<strong>内容：</strong>${result.reservationInfo.menuName} (${result.reservationInfo.duration}分${priceText})`;
+          }
+        }
+      }
+      
+      const notesText = result.reservationInfo.notes || 'なし';
+      const completeNotesEl = document.getElementById('completeNotes');
+      if (completeNotesEl) {
+        completeNotesEl.innerHTML = `<strong>スタッフへのメモ：</strong><span class="${notesText === 'なし' ? 'text-muted' : ''}">${notesText}</span>`;
+      }
+    }
+
+    const blocker = document.getElementById('interactionBlocker');
+    if (blocker) blocker.style.display = 'block';
+
+    const completeModalEl = document.getElementById('reservationCompleteModal');
+    if (!completeModalEl) {
+      console.error('予約完了モーダルが見つかりません');
+      return;
+    }
+    
+    const completeModal = new bootstrap.Modal(completeModalEl, {
+      backdrop: 'static',
+      keyboard: false
+    });
+    completeModal.show();
+
+    completeModalEl.setAttribute('data-bs-backdrop', 'static');
+    completeModalEl.setAttribute('data-bs-keyboard', 'false');
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    }, true);
+    document.body.style.overflow = 'hidden';
+
+    const resultElement = document.getElementById('result');
+    if (resultElement) {
+      resultElement.style.display = 'none';
+      resultElement.innerHTML = `
+        <div class="alert alert-success">
+          <i class="bi bi-check-circle me-2"></i>
+          ${result.message}
+          </div>
+      `;
+    }
+  } else {
+    displayMessage('result', `<i class="bi bi-exclamation-triangle me-2"></i>${result.message || '予約処理に失敗しました。'}`, 'danger');
+  }
+}
+
+/**
+ * 予約フォームをリセットする
+ */
+function resetReservationForm() {
+  const reservationForm = document.getElementById('reservationForm');
+  if (reservationForm) reservationForm.reset();
+  
+  const selectedDateTimeEl = document.getElementById('selectedDateTime');
+  if (selectedDateTimeEl) {
+    selectedDateTimeEl.textContent = '日時を選択してください';
+    selectedDateTimeEl.classList.remove('alert-info');
+    selectedDateTimeEl.classList.add('alert-secondary');
+  }
+  
+  const previouslySelected = document.querySelector('.time-slot.selected');
+  if (previouslySelected) {
+    previouslySelected.classList.remove('selected');
+  }
+  
+  const submitBtn = document.getElementById('submitBtn');
+  if (submitBtn) submitBtn.disabled = true;
+  
+  // メニュー選択も解除
+  const previousSelectedMenu = document.querySelector('.menu-button.selected');
+  if (previousSelectedMenu) {
+    previousSelectedMenu.classList.remove('selected');
+  }
+  
+  const selectedMenuIdField = document.getElementById('selectedMenuId');
+  if (selectedMenuIdField) selectedMenuIdField.value = '';
+  
+  // フォームリセット後もカレンダーは再読み込み
+  if (hasGoogleScriptRunFunction) {
+    updateCalendar();
+  } else {
+    // システム接続エラー - カレンダー更新ができない
+    console.error('カレンダー更新ができません: Google Apps Script未接続');
+    
+    const calendarBody = document.getElementById('calendarBody');
+    if (calendarBody) {
+      calendarBody.innerHTML = `
+        <tr>
+          <td colspan="8" class="text-center text-warning p-4">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            フォームリセット後のカレンダー更新ができません。
+            <br><small>ページを再読み込みしてください。</small>
+          </td>
+        </tr>
+      `;
+    }
+  }
+}
+
+/**
+ * 予約作成失敗時のコールバック関数
+ */
+function handleReservationFailure(error) {
+  console.error('予約失敗:', error);
+  displayMessage('result', `
+    <div class="alert alert-danger">
+      <i class="bi bi-exclamation-circle me-2"></i>
+      予約処理中にエラーが発生しました。時間をおいて再度お試しいただくか、別の日時をお選びください。
+      ${error && error.message ? `<br><small>${error.message}</small>` : ''}
+    </div>
+  `, '');
+}
+
+/**
+ * 予約一覧（未来の予約）を読み込む
+ */
+function loadReservations() {
+  const listDiv = document.getElementById('reservationsList');
+  const cancelResultDiv = document.getElementById('cancelResult');
+  
+  if (cancelResultDiv) cancelResultDiv.innerHTML = '';
+  if (!listDiv) return;
+  
+  listDiv.innerHTML = `
+    <div class="text-center p-4">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p>予約情報を読み込み中...</p>
+    </div>`;
+
+  if (hasGoogleScriptRunFunction) {
+    google.script.run
+      .withSuccessHandler(renderReservations)
+      .withFailureHandler(error => {
+        console.error('予約一覧の取得に失敗しました:', error);
+        if (listDiv) {
+          listDiv.innerHTML = `
+            <div class="alert alert-danger">
+              <i class="bi bi-exclamation-triangle me-2"></i>予約情報の読み込みに失敗しました。再度お試しください。
+            </div>
+          `;
+        }
+      })
+      .getUserReservations(userId);
+  } else {
+    // システム接続エラー
+    if (listDiv) {
+      listDiv.innerHTML = `
+        <div class="alert alert-danger">
+          <i class="bi bi-exclamation-triangle me-2"></i>
+          システムに接続できません。ページを再読み込みしてください。
+        </div>
+      `;
+    }
+  }
+}
+
+/**
+ * 予約履歴を表示する関数
+ * @param {Array<object>} pastReservations - 過去の予約データ配列
+ */
+function renderHistory(pastReservations) {
+  const historyListDiv = document.getElementById('historyList');
+  if (!historyListDiv) return;
+  
+  historyListDiv.innerHTML = ''; // 現在の内容をクリア
+
+  if (!pastReservations || pastReservations.length === 0) {
+    historyListDiv.innerHTML = `
+      <div class="alert alert-secondary">
+        <i class="bi bi-clock-history me-2"></i>過去の予約履歴はありません。
+      </div>`;
+    return;
+  }
+
+  // 予約を日付の降順（新しいものが上）にソート
+  pastReservations.sort((a, b) => {
+    const dateA = new Date(a.date + 'T' + a.time);
+    const dateB = new Date(b.date + 'T' + b.time);
+    return dateB - dateA; // 降順ソート
+  });
+
+  historyListDiv.innerHTML = `
+    <h5 class="border-bottom pb-2 mb-4" style="font-size: 40px;">
+      <i class="bi bi-clock-history me-2"></i>過去のご予約
+      <span class="badge bg-secondary ms-2" style="font-size: 40px;">${pastReservations.length}件</span>
+    </h5>`;
+
+  pastReservations.forEach((res) => {
+    const dateObj = new Date(res.date + 'T' + res.time);
+    const formattedDate = formatDateWithDayJP(dateObj);
+    const timeDisplay = res.endTime ? `${res.time} 〜 ${res.endTime}` : res.time;
+    const notesText = res.notes ? res.notes : 'なし';
+    
+    // 金額の表示（金額がない場合は「-」を表示）
+    const priceText = res.price ? `¥${res.price.toLocaleString()}` : '-';
+
+    const card = document.createElement('div');
+    // 過去の予約であることがわかるようにスタイルを適用
+    card.className = 'card mb-3 reservation-card past-reservation'; // past-reservation クラスを追加
+    card.id = `history-${res.id}`; // IDが重複しないように prefix を変更
+
+    card.innerHTML = `
+      <div class="card-header d-flex justify-content-between align-items-center">
+         <small class="text-muted">予約ID: ${res.id}</small>
+         </div>
+      <div class="card-body">
+        <h5 class="card-title">
+          <i class="bi bi-calendar-event me-2"></i><strong>日付：</strong>${formattedDate}
+        </h5>
+        <p class="card-text">
+          <i class="bi bi-clock me-2"></i><strong>時間：</strong>${timeDisplay}
+        </p>
+        <p class="card-text">
+          <i class="bi bi-scissors me-2"></i><strong>内容：</strong> ${res.description || "カット・スタイリング"}
+        </p>
+        <p class="card-text">
+          <i class="bi bi-currency-yen me-2"></i><strong>金額：</strong> ${priceText}
+        </p>
+        <div class="card-text mt-3">
+           <p class="mb-1"><strong>スタッフへのメモ</strong></p>
+           <div class="p-2 border rounded bg-white" style="font-size: 28px; line-height: 1.4; font-weight: normal;">
+            ${notesText === 'なし' ? '<span class="text-muted">なし</span>' : `<span>${notesText}</span>`}
+          </div>
+        </div>
+        <div class="row mt-3">
+          <div class="col-12 text-end">
+            <span class="btn btn-secondary disabled history-status">
+              <i class="bi bi-check-circle me-2"></i>予約完了
+            </span>
+          </div>
+        </div>
+      </div>
+    `;
+    historyListDiv.appendChild(card);
+  });
+}
+
+/**
+ * DateオブジェクトをYYYY-MM-DD 形式の文字列にフォーマットする
+ */
+function formatDate(date) {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+  try {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  } catch (error) {
+     console.error('formatDateでエラー:', error);
+     return '';
+  }
+}
+
+/**
+ * Dateオブジェクトを MM/DD 形式の文字列にフォーマットする
+ */
+function formatDateMMDD(date) {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+  const month = String(date.getMonth() + 1);
+  const day = String(date.getDate());
+  return `${month}/${day}`;
+}
+
+/**
+ * DateオブジェクトをYYYY年M月D日(曜) 形式の日本語文字列にフォーマットする
+ */
+function formatDateWithDayJP(date) {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const days = ['日', '月', '火', '水', '木', '金', '土'];
+  const dayName = days[date.getDay()];
+  return `${year}年${month}月${day}日(${dayName})`;
+}
+
+/**
+ * 週ナビゲーションボタンの状態と週表示を更新する
+ */
+function updateWeekNavigation() {
+  const prevWeekBtn = document.getElementById('prevWeek');
+  const nextWeekBtn = document.getElementById('nextWeek');
+  const todayBtn = document.getElementById('todayBtn');
+  const currentWeekDiv = document.getElementById('currentWeek');
+  
+  if (!currentWeekStart || !prevWeekBtn || !nextWeekBtn || !todayBtn || !currentWeekDiv) return;
+
+  const weekEndDate = new Date(currentWeekStart);
+  weekEndDate.setDate(weekEndDate.getDate() + 6);
+  currentWeekDiv.textContent = `${formatDateMMDD(currentWeekStart)} 〜 ${formatDateMMDD(weekEndDate)}`;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const previousWeekStart = new Date(currentWeekStart);
+  previousWeekStart.setDate(previousWeekStart.getDate() - 7);
+  prevWeekBtn.disabled = previousWeekStart < today;
+
+  nextWeekBtn.disabled = weekEndDate >= endDate;
+
+  const currentWeekStartDay = new Date(currentWeekStart);
+  currentWeekStartDay.setHours(0, 0, 0, 0);
+
+  const isSameDate = (date1, date2) => {
+    return date1.getFullYear() === date2.getFullYear() &&
+           date1.getMonth() === date2.getMonth() &&
+           date1.getDate() === date2.getDate();
+  };
+
+  let weekContainsTodayFlag = false;
+  for (let i = 0; i < 7; i++) {
+    const dayInWeek = new Date(currentWeekStart);
+    dayInWeek.setDate(currentWeekStart.getDate() + i);
+    dayInWeek.setHours(0,0,0,0); // 時刻をリセットして比較
+    if (isSameDate(dayInWeek, today)) {
+      weekContainsTodayFlag = true;
+      break;
+    }
+  }
+  // 本日ボタンは、表示中の週に本日が含まれていない場合のみ有効
+  todayBtn.disabled = weekContainsTodayFlag;
+
+  // ボタンがdisableの場合でもスピナーは非表示にする（念のため）
+   const prevSpinner = prevWeekBtn.querySelector('.spinner-border');
+   const nextSpinner = nextWeekBtn.querySelector('.spinner-border');
+   if(prevSpinner) prevSpinner.classList.add('d-none');
+   if(nextSpinner) nextSpinner.classList.add('d-none');
+}
+
+/**
+ * ローディングインジケーターの表示/非表示を切り替える
+ */
+function showLoading(isLoading) {
+  const calendarBody = document.getElementById('calendarBody');
+  if (isLoading && calendarBody) {
+    calendarBody.innerHTML = `
+      <tr>
+        <td colspan="8" class="text-center p-4">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p>予約可能な時間枠を読み込み中...</p>
+        </td>
+      </tr>
+    `;
+    // ローディング表示中もナビゲーションボタンの状態は更新する
+    updateWeekNavigation();
+  }
+  // ローディング終了時は renderCalendar で内容が置き換わる
+}
+
+/**
+ * 指定されたIDの要素にメッセージを表示する
+ */
+function displayMessage(elementId, message, type = 'info') {
+  const element = document.getElementById(elementId);
+  if (!element) return;
+  
+  if (type) {
+    element.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                      ${message}
+                      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>`;
+  } else {
+    // typeが空の場合はメッセージをそのまま表示（既にalertクラスが含まれている場合など）
+    element.innerHTML = message;
+    
+    // 必要であれば閉じるボタンを追加
+    if (!message.includes('btn-close')) {
+      try {
+        const div = document.createElement('div');
+        div.innerHTML = message;
+        
+        const alertDiv = div.firstChild;
+        if (alertDiv && alertDiv.classList && alertDiv.classList.contains('alert')) {
+          const closeButton = document.createElement('button');
+          closeButton.type = 'button';
+          closeButton.className = 'btn-close';
+          closeButton.setAttribute('data-bs-dismiss', 'alert');
+          closeButton.setAttribute('aria-label', 'Close');
+          
+          alertDiv.appendChild(closeButton);
+          element.innerHTML = '';
+          element.appendChild(alertDiv);
+        } else {
+          element.innerHTML = message; // alertクラスがない場合はそのまま表示
+        }
+      } catch (error) {
+        console.error('メッセージ処理中にエラーが発生しました:', error);
+        element.innerHTML = message; // エラー時はそのまま表示
+      }
+    }
+  }
+}
+
+/**
+ * 予約一覧を読み込む関数
+ */
+function loadReservations() {
+  const listDiv = document.getElementById('reservationsList');
+  const cancelResultDiv = document.getElementById('cancelResult');
+  
+  if (cancelResultDiv) cancelResultDiv.innerHTML = '';
+  if (!listDiv) return;
+  
+  listDiv.innerHTML = `
+    <div class="text-center p-4">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p>予約情報を読み込み中...</p>
+    </div>`;
+
+  if (hasGoogleScriptRunFunction) {
+    google.script.run
+      .withSuccessHandler(renderReservations)
+      .withFailureHandler(error => {
+        console.error('予約一覧の取得に失敗しました:', error);
+        if (listDiv) {
+          listDiv.innerHTML = `
+            <div class="alert alert-danger">
+              <i class="bi bi-exclamation-triangle me-2"></i>予約情報の読み込みに失敗しました。再度お試しください。
+            </div>
+          `;
+        }
+      })
+      .getUserReservations(userId);
+  } else {
+    // システム接続エラー
+    if (listDiv) {
+      listDiv.innerHTML = `
+        <div class="alert alert-danger">
+          <i class="bi bi-exclamation-triangle me-2"></i>
+          システムに接続できません。ページを再読み込みしてください。
+        </div>
+      `;
+    }
+  }
+}
+
+/**
+ * 予約一覧（未来の予約）を表示する
+ */
+function renderReservations(reservations) {
+  const listDiv = document.getElementById('reservationsList');
+  if (!listDiv) return;
+  
+  listDiv.innerHTML = '';
+  if (!reservations || reservations.length === 0) {
+    listDiv.innerHTML = `
+      <div class="alert alert-info">
+        <i class="bi bi-calendar-x me-2"></i>現在、有効な予約はありません。
+      </div>`;
+    return;
+  }
+  reservations.sort((a, b) => {
+    const dateA = new Date(a.date + 'T' + a.time);
+    const dateB = new Date(b.date + 'T' + b.time);
+    return dateA - dateB;
+  });
+  listDiv.innerHTML = `
+    <h5 class="border-bottom pb-2 mb-4" style="font-size: 40px;">
+      <i class="bi bi-calendar-check me-2"></i>今後のご予約
+      <span class="badge bg-primary ms-2" style="font-size: 40px;">${reservations.length}件</span>
+    </h5>`;
+  reservations.forEach((res) => {
+    const dateObj = new Date(res.date + 'T' + res.time);
+    const formattedDate = formatDateWithDayJP(dateObj);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const reservationDate = new Date(res.date);
+    reservationDate.setHours(0, 0, 0, 0);
+    const isToday = reservationDate.getTime() === today.getTime();
+    // isPast の判定は loadReservations が未来のみを返す前提のため不要
+    const timeDisplay = res.endTime ? `${res.time} 〜 ${res.endTime}` : res.time;
+    const notesText = res.notes ? res.notes : 'なし';
+    
+    // 金額の表示（金額がない場合は「-」を表示）
+    const priceText = res.price ? `¥${res.price.toLocaleString()}` : '-';
+    
+    const card = document.createElement('div');
+    // 今日の予約は枠線を強調
+    card.className = `card mb-3 reservation-card ${isToday ? 'border-primary border-2' : ''}`;
+    card.id = `reservation-${res.id}`;
+    card.innerHTML = `
+      <div class="card-header d-flex justify-content-between align-items-center ${isToday ? 'bg-primary text-white' : ''}">
+        <div>
+          ${isToday ? '<span class="badge bg-warning text-dark me-2">本日</span>' : ''}
+          <small class="text-${isToday ? 'light' : 'muted'}">予約ID: ${res.id}</small>
+        </div>
+      </div>
+      <div class="card-body">
+        <h5 class="card-title">
+          <i class="bi bi-calendar-event me-2"></i><strong>日付：</strong>${formattedDate}
+        </h5>
+        <p class="card-text">
+          <i class="bi bi-clock me-2"></i><strong>時間：</strong>${timeDisplay}
+        </p>
+        <p class="card-text">
+          <i class="bi bi-scissors me-2"></i><strong>内容：</strong> ${res.description || "カット・スタイリング"}
+        </p>
+        <p class="card-text">
+          <i class="bi bi-currency-yen me-2"></i><strong>金額：</strong> ${priceText}
+        </p>
+        <div class="card-text mt-3">
+          <p class="mb-1"><strong>スタッフへのメモ</strong></p>
+          <div class="p-2 border rounded bg-white" style="font-size: 28px; line-height: 1.4; font-weight: normal;">
+            ${notesText === 'なし' ? '<span class="text-muted">なし</span>' : `<span>${notesText}</span>`}
+          </div>
+        </div>
+        <div class="row mt-3">
+          <div class="col-12 text-end">
+            <button class="btn btn-outline-danger cancel-btn" data-reservation-id="${res.id}">
+              <i class="bi bi-x-circle me-2"></i>
+              <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+              キャンセルする
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+    listDiv.appendChild(card);
+  });
+  listDiv.querySelectorAll('.cancel-btn').forEach(button => {
+    button.addEventListener('click', handleCancelButtonClick);
+  });
+  // キャンセル確定ボタンのイベントリスナーは一度だけ設定
+  const confirmCancelBtn = document.getElementById('confirmCancelBtn');
+  if (confirmCancelBtn) {
+    const newConfirmCancelBtn = confirmCancelBtn.cloneNode(true); // クローンして既存のリスナーを削除
+    confirmCancelBtn.parentNode.replaceChild(newConfirmCancelBtn, confirmCancelBtn);
+    newConfirmCancelBtn.addEventListener('click', handleConfirmCancel);
+  }
+}
+
+/**
+ * キャンセルボタンがクリックされたときの処理（モーダルを表示）
+ */
+function handleCancelButtonClick(event) {
+  const button = event.currentTarget;
+  const reservationId = button.dataset.reservationId;
+  const cancelResultDiv = document.getElementById('cancelResult');
+  if (cancelResultDiv) cancelResultDiv.innerHTML = '';
+
+  const card = button.closest('.reservation-card');
+  let dateText = '', timeText = '', contentText = 'カット・スタイリング', priceText = '-', notesText = 'なし';
+
+  const cardTitle = card.querySelector('.card-title');
+  if (cardTitle && cardTitle.textContent.includes('日付：')) {
+    const match = cardTitle.textContent.match(/日付：(.+)/);
+    if (match) dateText = match[1].trim();
+  }
+
+  const cardTexts = card.querySelectorAll('.card-text');
+  cardTexts.forEach(element => {
+    const text = element.textContent.trim();
+    if (text.includes('時間：')) {
+      const match = text.match(/時間：(.+)/);
+      if (match) timeText = match[1].trim();
+    } else if (text.includes('内容：')) {
+      const match = text.match(/内容：(.+)/);
+      if (match) contentText = match[1].trim();
+    } else if (text.includes('金額：')) {
+      const match = text.match(/金額：(.+)/);
+      if (match) priceText = match[1].trim();
+    }
+  });
+
+  const notesContainer = card.querySelector('.card-text.mt-3');
+  if (notesContainer) {
+      const notesElement = notesContainer.querySelector('.border.rounded span');
+      if (notesElement && !notesElement.classList.contains('text-muted')) { // 「なし」でない場合
+          notesText = notesElement.textContent.trim();
+      }
+  }
+
+  const modalReservationIdEl = document.getElementById('modalReservationId');
+  const modalReservationDateEl = document.getElementById('modalReservationDate');
+  const modalReservationTimeEl = document.getElementById('modalReservationTime');
+  const modalReservationContentEl = document.getElementById('modalReservationContent');
+  const modalReservationPriceEl = document.getElementById('modalReservationPrice');  // 新規追加
+  const modalReservationNotesEl = document.getElementById('modalReservationNotes');
+  const confirmCancelBtnEl = document.getElementById('confirmCancelBtn');
+  
+  if (modalReservationIdEl) modalReservationIdEl.textContent = reservationId;
+  if (modalReservationDateEl) modalReservationDateEl.textContent = dateText;
+  if (modalReservationTimeEl) modalReservationTimeEl.textContent = timeText;
+  if (modalReservationContentEl) modalReservationContentEl.textContent = contentText;
+  if (modalReservationPriceEl) modalReservationPriceEl.textContent = priceText;  // 新規追加
+  if (modalReservationNotesEl) {
+    modalReservationNotesEl.textContent = notesText;
+    modalReservationNotesEl.classList.toggle('text-muted', notesText === 'なし');
+  }
+
+  if (confirmCancelBtnEl) confirmCancelBtnEl.dataset.reservationId = reservationId;
+
+  const cancelConfirmModalEl = document.getElementById('cancelConfirmModal');
+  if (!cancelConfirmModalEl) {
+    console.error('キャンセル確認モーダルが見つかりません');
+    return;
+  }
+  
+  const cancelModal = new bootstrap.Modal(cancelConfirmModalEl);
+  cancelModal.show();
+}
+
+/**
+ * モーダルでキャンセル確定ボタンがクリックされたときの処理
+ */
+function handleConfirmCancel(event) {
+  const button = event.currentTarget;
+  const reservationId = button.dataset.reservationId;
+  const cancelResultDiv = document.getElementById('cancelResult');
+
+  button.disabled = true;
+  const spinner = button.querySelector('.spinner-border');
+  if (spinner) spinner.classList.remove('d-none');
+
+  console.log(`キャンセル実行: ID=${reservationId}, User=${userId}`);
+  
+  if (hasGoogleScriptRunFunction) {
+    google.script.run
+      .withSuccessHandler(result => {
+        const cancelModalEl = document.getElementById('cancelConfirmModal');
+        if (cancelModalEl) {
+          const cancelModal = bootstrap.Modal.getInstance(cancelModalEl);
+          if (cancelModal) {
+              cancelModal.hide();
+          }
+        }
+        // キャンセルボタン要素を取得し直す必要がある場合がある
+        const originalButton = document.querySelector(`.cancel-btn[data-reservation-id="${reservationId}"]`);
+        handleCancelSuccess(result, originalButton);
+        button.disabled = false;
+        if (spinner) spinner.classList.add('d-none');
+      })
+      .withFailureHandler(error => {
+        const cancelModalEl = document.getElementById('cancelConfirmModal');
+        if (cancelModalEl) {
+          const cancelModal = bootstrap.Modal.getInstance(cancelModalEl);
+          if (cancelModal) {
+              cancelModal.hide();
+          }
+        }
+        const originalButton = document.querySelector(`.cancel-btn[data-reservation-id="${reservationId}"]`);
+        handleCancelFailure(error, originalButton); // エラー時もボタンを渡す
+        button.disabled = false;
+        if (spinner) spinner.classList.add('d-none');
+      })
+      .cancelReservation(reservationId, userId);
+  } else {
+    // システム接続エラー - キャンセル処理を実行できない
+    console.error('キャンセル処理失敗: Google Apps Script接続不可');
+    
+    // モーダルを閉じる
+    const cancelModalEl = document.getElementById('cancelConfirmModal');
+    if (cancelModalEl) {
+      const cancelModal = bootstrap.Modal.getInstance(cancelModalEl);
+      if (cancelModal) {
+        cancelModal.hide();
+      }
+    }
+    
+    // ボタン状態を元に戻す
+    button.disabled = false;
+    if (spinner) spinner.classList.add('d-none');
+    
+    // エラーメッセージを表示
+    displayMessage('cancelResult', `
+      <div class="alert alert-danger">
+        <i class="bi bi-exclamation-circle me-2"></i>
+        システムに接続できないため、キャンセル処理ができません。
+        <br><small>ページを再読み込みしてから再度お試しください。</small>
+      </div>
+    `, '');
+  }
+}
+
+/**
+ * 予約キャンセル成功時のコールバック関数
+ */
+function handleCancelSuccess(result, button) { // button引数を追加
+  console.log('キャンセル結果:', result);
+  if (result.success) {
+    displayMessage('cancelResult', `<i class="bi bi-check-circle me-2"></i>${result.message || '予約をキャンセルしました。'}`, 'success');
+    if (button) { // buttonが存在する場合のみ処理
+      const card = button.closest('.reservation-card');
+      if (card) {
+        card.classList.add('border-danger'); // 枠線を追加
+        const cardBody = card.querySelector('.card-body');
+        if (cardBody) {
+            cardBody.style.opacity = '0.6';
+        }
+        // ボタンを「キャンセル済み」に変更
+        button.classList.remove('btn-outline-danger');
+        button.classList.add('btn-secondary', 'disabled'); // btn-dangerから変更
+        button.disabled = true;
+        button.innerHTML = '<i class="bi bi-calendar-x me-2"></i>キャンセル済み';
+      }
+    }
+    // カレンダーを更新
+    if (hasGoogleScriptRunFunction) {
+      updateCalendar();
+    } else {
+      // システム接続エラー - カレンダー更新ができない
+      console.error('キャンセル後のカレンダー更新ができません: Google Apps Script未接続');
+      
+      const calendarBody = document.getElementById('calendarBody');
+      if (calendarBody) {
+        calendarBody.innerHTML = `
+          <tr>
+            <td colspan="8" class="text-center text-warning p-4">
+              <i class="bi bi-exclamation-triangle me-2"></i>
+              キャンセル後のカレンダー更新ができません。
+              <br><small>ページを再読み込みして最新の状態をご確認ください。</small>
+            </td>
+          </tr>
+        `;
+      }
+      
+      // 成功メッセージに追記で注意喚起
+      const cancelResultDiv = document.getElementById('cancelResult');
+      if (cancelResultDiv) {
+        const currentMessage = cancelResultDiv.innerHTML;
+        cancelResultDiv.innerHTML = currentMessage + `
+          <div class="alert alert-info mt-2">
+            <i class="bi bi-info-circle me-2"></i>
+            <small>最新の予約状況を確認するには、ページを再読み込みしてください。</small>
+          </div>
+        `;
+      }
+    }
+  } else {
+    displayMessage('cancelResult', `<i class="bi bi-exclamation-triangle me-2"></i>${result.message || 'キャンセルに失敗しました。'}`, 'danger');
+  }
+}
+
+/**
+ * 予約キャンセル失敗時のコールバック関数
+ */
+function handleCancelFailure(error, button) { // button引数を追加
+  console.error('キャンセルエラー:', error);
+  displayMessage('cancelResult', `
+    <div class="d-flex align-items-center alert alert-danger">
+      <i class="bi bi-exclamation-triangle-fill text-danger me-2 fs-4"></i>
+      <div>キャンセル処理中にエラーが発生しました。時間をおいて再度お試しください。
+       ${error && error.message ? `<br><small>エラー: ${error.message}</small>` : ''}
+      </div>
+    </div>
+  `, ''); // typeを空にしてalertクラスを直接指定
+  // ボタンの状態は handleConfirmCancel で元に戻される
+}
+
+/**
+ * 予約履歴を読み込む関数
+ */
+function loadHistory() {
+  const historyListDiv = document.getElementById('historyList');
+  const historyResultDiv = document.getElementById('historyResult');
+  
+  if (historyResultDiv) historyResultDiv.innerHTML = ''; // 前回のメッセージをクリア
+  if (!historyListDiv) return;
+  
+  historyListDiv.innerHTML = `
+    <div class="text-center p-4">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p>予約履歴を読み込み中...</p>
+    </div>`;
+
+  if (hasGoogleScriptRunFunction) {
+    // GAS側に getUserPastReservations(userId) 関数を実装してください
+    // この関数は、指定されたユーザーの過去の予約（今日より前の予約）を配列で返すようにします。
+    google.script.run
+      .withSuccessHandler(renderHistory)
+      .withFailureHandler(error => {
+        console.error('予約履歴の取得に失敗しました:', error);
+        if (historyListDiv) historyListDiv.innerHTML = ''; // ローディング表示を消す
+        displayMessage('historyResult', '<i class="bi bi-exclamation-triangle me-2"></i>予約履歴の読み込みに失敗しました。再度お試しください。', 'danger');
+      })
+      .getUserPastReservations(userId); // GAS側の関数名を指定
+  } else {
+    // システム接続エラー - 予約履歴を取得できない
+    console.error('予約履歴取得失敗: Google Apps Script接続不可');
+    
+    // ローディング表示を消す
+    if (historyListDiv) {
+      historyListDiv.innerHTML = `
+        <div class="alert alert-danger">
+          <i class="bi bi-exclamation-triangle me-2"></i>
+          システムに接続できないため、予約履歴を取得できません。
+          <br><small>ページを再読み込みしてから再度お試しください。</small>
+        </div>
+      `;
+    }
+    
+    // 結果エリアにもエラーメッセージを表示
+    displayMessage('historyResult', `
+      <i class="bi bi-exclamation-circle me-2"></i>
+      予約履歴の表示ができません。システム接続エラーが発生しています。
+    `, 'danger');
+  }
+}
+
+/**
+ * 予約履歴を表示する関数
+ * @param {Array<object>} pastReservations - 過去の予約データ配列
+ */
+function renderHistory(pastReservations) {
+  const historyListDiv = document.getElementById('historyList');
+  if (!historyListDiv) return;
+  
+  historyListDiv.innerHTML = ''; // 現在の内容をクリア
+
+  if (!pastReservations || pastReservations.length === 0) {
+    historyListDiv.innerHTML = `
+      <div class="alert alert-secondary">
+        <i class="bi bi-clock-history me-2"></i>過去の予約履歴はありません。
+      </div>`;
+    return;
+  }
+
+  // 予約を日付の降順（新しいものが上）にソート
+  pastReservations.sort((a, b) => {
+    const dateA = new Date(a.date + 'T' + a.time);
+    const dateB = new Date(b.date + 'T' + b.time);
+    return dateB - dateA; // 降順ソート
+  });
+
+  historyListDiv.innerHTML = `
+    <h5 class="border-bottom pb-2 mb-4" style="font-size: 40px;">
+      <i class="bi bi-clock-history me-2"></i>過去のご予約
+      <span class="badge bg-secondary ms-2" style="font-size: 40px;">${pastReservations.length}件</span>
+    </h5>`;
+
+  pastReservations.forEach((res) => {
+    const dateObj = new Date(res.date + 'T' + res.time);
+    const formattedDate = formatDateWithDayJP(dateObj);
+    const timeDisplay = res.endTime ? `${res.time} 〜 ${res.endTime}` : res.time;
+    const notesText = res.notes ? res.notes : 'なし';
+    
+    // 金額の表示（金額がない場合は「-」を表示）
+    const priceText = res.price ? `¥${res.price.toLocaleString()}` : '-';
+
+    const card = document.createElement('div');
+    // 過去の予約であることがわかるようにスタイルを適用
+    card.className = 'card mb-3 reservation-card past-reservation'; // past-reservation クラスを追加
+    card.id = `history-${res.id}`; // IDが重複しないように prefix を変更
+
+    card.innerHTML = `
+      <div class="card-header d-flex justify-content-between align-items-center">
+         <small class="text-muted">予約ID: ${res.id}</small>
+         </div>
+      <div class="card-body">
+        <h5 class="card-title">
+          <i class="bi bi-calendar-event me-2"></i><strong>日付：</strong>${formattedDate}
+        </h5>
+        <p class="card-text">
+          <i class="bi bi-clock me-2"></i><strong>時間：</strong>${timeDisplay}
+        </p>
+        <p class="card-text">
+          <i class="bi bi-scissors me-2"></i><strong>内容：</strong> ${res.description || "カット・スタイリング"}
+        </p>
+        <p class="card-text">
+          <i class="bi bi-currency-yen me-2"></i><strong>金額：</strong> ${priceText}
+        </p>
+        <div class="card-text mt-3">
+           <p class="mb-1"><strong>スタッフへのメモ</strong></p>
+           <div class="p-2 border rounded bg-white" style="font-size: 28px; line-height: 1.4; font-weight: normal;">
+            ${notesText === 'なし' ? '<span class="text-muted">なし</span>' : `<span>${notesText}</span>`}
+          </div>
+        </div>
+        <div class="row mt-3">
+          <div class="col-12 text-end">
+            <span class="btn btn-secondary disabled history-status">
+              <i class="bi bi-check-circle me-2"></i>予約完了
+            </span>
+          </div>
+        </div>
+      </div>
+    `;
+    historyListDiv.appendChild(card);
+  });
+}
+
+/**
+ * DateオブジェクトをYYYY-MM-DD 形式の文字列にフォーマットする
+ */
+function formatDate(date) {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+  try {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  } catch (error) {
+     console.error('formatDateでエラー:', error);
+     return '';
+  }
+}
+
+/**
+ * Dateオブジェクトを MM/DD 形式の文字列にフォーマットする
+ */
+function formatDateMMDD(date) {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+  const month = String(date.getMonth() + 1);
+  const day = String(date.getDate());
+  return `${month}/${day}`;
+}
+
+/**
+ * DateオブジェクトをYYYY年M月D日(曜) 形式の日本語文字列にフォーマットする
+ */
+function formatDateWithDayJP(date) {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const days = ['日', '月', '火', '水', '木', '金', '土'];
+  const dayName = days[date.getDay()];
+  return `${year}年${month}月${day}日(${dayName})`;
+}
+
+/**
+ * 週ナビゲーションボタンの状態と週表示を更新する
+ */
+function updateWeekNavigation() {
+  const prevWeekBtn = document.getElementById('prevWeek');
+  const nextWeekBtn = document.getElementById('nextWeek');
+  const todayBtn = document.getElementById('todayBtn');
+  const currentWeekDiv = document.getElementById('currentWeek');
+  
+  if (!currentWeekStart || !prevWeekBtn || !nextWeekBtn || !todayBtn || !currentWeekDiv) return;
+
+  const weekEndDate = new Date(currentWeekStart);
+  weekEndDate.setDate(weekEndDate.getDate() + 6);
+  currentWeekDiv.textContent = `${formatDateMMDD(currentWeekStart)} 〜 ${formatDateMMDD(weekEndDate)}`;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const previousWeekStart = new Date(currentWeekStart);
+  previousWeekStart.setDate(previousWeekStart.getDate() - 7);
+  prevWeekBtn.disabled = previousWeekStart < today;
+
+  nextWeekBtn.disabled = weekEndDate >= endDate;
+
+  const currentWeekStartDay = new Date(currentWeekStart);
+  currentWeekStartDay.setHours(0, 0, 0, 0);
+
+  const isSameDate = (date1, date2) => {
+    return date1.getFullYear() === date2.getFullYear() &&
+           date1.getMonth() === date2.getMonth() &&
+           date1.getDate() === date2.getDate();
+  };
+
+  let weekContainsTodayFlag = false;
+  for (let i = 0; i < 7; i++) {
+    const dayInWeek = new Date(currentWeekStart);
+    dayInWeek.setDate(currentWeekStart.getDate() + i);
+    dayInWeek.setHours(0,0,0,0); // 時刻をリセットして比較
+    if (isSameDate(dayInWeek, today)) {
+      weekContainsTodayFlag = true;
+      break;
+    }
+  }
+  // 本日ボタンは、表示中の週に本日が含まれていない場合のみ有効
+  todayBtn.disabled = weekContainsTodayFlag;
+
+  // ボタンがdisableの場合でもスピナーは非表示にする（念のため）
+   const prevSpinner = prevWeekBtn.querySelector('.spinner-border');
+   const nextSpinner = nextWeekBtn.querySelector('.spinner-border');
+   if(prevSpinner) prevSpinner.classList.add('d-none');
+   if(nextSpinner) nextSpinner.classList.add('d-none');
+}
+
+/**
+ * ローディングインジケーターの表示/非表示を切り替える
+ */
+function showLoading(isLoading) {
+  const calendarBody = document.getElementById('calendarBody');
+  if (isLoading && calendarBody) {
+    calendarBody.innerHTML = `
+      <tr>
+        <td colspan="8" class="text-center p-4">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p>予約可能な時間枠を読み込み中...</p>
+        </td>
+      </tr>
+    `;
+    // ローディング表示中もナビゲーションボタンの状態は更新する
+    updateWeekNavigation();
+  }
+  // ローディング終了時は renderCalendar で内容が置き換わる
+}
+
+/**
+ * 指定されたIDの要素にメッセージを表示する
+ */
+function displayMessage(elementId, message, type = 'info') {
+  const element = document.getElementById(elementId);
+  if (!element) return;
+  
+  if (type) {
+    element.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                      ${message}
+                      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>`;
+  } else {
+    // typeが空の場合はメッセージをそのまま表示（既にalertクラスが含まれている場合など）
+    element.innerHTML = message;
+    
+    // 必要であれば閉じるボタンを追加
+    if (!message.includes('btn-close')) {
+      try {
+        const div = document.createElement('div');
+        div.innerHTML = message;
+        
+        const alertDiv = div.firstChild;
+        if (alertDiv && alertDiv.classList && alertDiv.classList.contains('alert')) {
+          const closeButton = document.createElement('button');
+          closeButton.type = 'button';
+          closeButton.className = 'btn-close';
+          closeButton.setAttribute('data-bs-dismiss', 'alert');
+          closeButton.setAttribute('aria-label', 'Close');
+          
+          alertDiv.appendChild(closeButton);
+          element.innerHTML = '';
+          element.appendChild(alertDiv);
+        } else {
+          element.innerHTML = message; // alertクラスがない場合はそのまま表示
+        }
+      } catch (error) {
+        console.error('メッセージ処理中にエラーが発生しました:', error);
+        element.innerHTML = message; // エラー時はそのまま表示
+      }
+    }
+  }
+}
+</script>
+</body>
+</html>
